@@ -1,0 +1,16 @@
+﻿.vs/
+.vscode/
+.idea/
+
+bin/
+obj/
+
+TestResults/
+
+*.user
+*.suo
+
+node_modules/
+
+.DS_Store
+Thumbs.db
