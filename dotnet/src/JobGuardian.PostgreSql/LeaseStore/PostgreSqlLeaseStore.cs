@@ -8,12 +8,21 @@ using JobGuardian.PostgreSql.Models.Persistence;
 
 namespace JobGuardian.PostgreSql.LeaseStore;
 
+/// <summary>
+/// Stores job leases in PostgreSQL and enforces distributed ownership coordination.
+/// </summary>
 public sealed class PostgreSqlLeaseStore
     : ILeaseStore
 {
     private readonly IPostgreSqlConnectionFactory
         _connectionFactory;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PostgreSqlLeaseStore"/> class.
+    /// </summary>
+    /// <param name="connectionFactory">
+    /// Factory used to create database connections for lease operations.
+    /// </param>
     public PostgreSqlLeaseStore(
         IPostgreSqlConnectionFactory connectionFactory)
     {
@@ -21,6 +30,21 @@ public sealed class PostgreSqlLeaseStore
             connectionFactory;
     }
 
+    /// <summary>
+    /// Attempts to acquire a distributed lease for the specified execution.
+    /// </summary>
+    /// <param name="execution">
+    /// The execution that is requesting lease ownership.
+    /// </param>
+    /// <param name="leaseDuration">
+    /// The duration for which the lease should remain valid.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// Token used to cancel the operation.
+    /// </param>
+    /// <returns>
+    /// <c>true</c> when the lease is acquired; otherwise, <c>false</c>.
+    /// </returns>
     public async Task<bool> TryAcquireAsync(
     ActiveExecution execution,
     TimeSpan leaseDuration,
@@ -92,6 +116,24 @@ public sealed class PostgreSqlLeaseStore
         return affectedRows == 1;
     }
 
+    /// <summary>
+    /// Renews an existing lease for the specified execution.
+    /// </summary>
+    /// <param name="jobKey">
+    /// The job whose lease should be renewed.
+    /// </param>
+    /// <param name="executionId">
+    /// The execution identifier carrying the active lease.
+    /// </param>
+    /// <param name="leaseDuration">
+    /// The duration to extend the lease by.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// Token used to cancel the operation.
+    /// </param>
+    /// <returns>
+    /// <c>true</c> when the lease is renewed; otherwise, <c>false</c>.
+    /// </returns>
     public async Task<bool> RenewAsync(
     JobKey jobKey,
     Guid executionId,
@@ -133,6 +175,21 @@ public sealed class PostgreSqlLeaseStore
         return affectedRows == 1;
     }
 
+    /// <summary>
+    /// Releases the lease for the specified execution.
+    /// </summary>
+    /// <param name="jobKey">
+    /// The job whose lease should be released.
+    /// </param>
+    /// <param name="executionId">
+    /// The execution identifier that owns the lease.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// Token used to cancel the operation.
+    /// </param>
+    /// <returns>
+    /// <c>true</c> when the lease is released; otherwise, <c>false</c>.
+    /// </returns>
     public async Task<bool> ReleaseAsync(
     JobKey jobKey,
     Guid executionId,
@@ -168,6 +225,18 @@ public sealed class PostgreSqlLeaseStore
         return affectedRows == 1;
     }
 
+    /// <summary>
+    /// Gets the active lease for the specified job when one is currently valid.
+    /// </summary>
+    /// <param name="jobKey">
+    /// The job whose active lease is requested.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// Token used to cancel the operation.
+    /// </param>
+    /// <returns>
+    /// The active lease, or <c>null</c> when no valid lease exists.
+    /// </returns>
     public async Task<ActiveLease?> GetActiveLeaseAsync(
     JobKey jobKey,
     CancellationToken cancellationToken = default)

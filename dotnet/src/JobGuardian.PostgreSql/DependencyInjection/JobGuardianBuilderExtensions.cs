@@ -13,8 +13,26 @@ using Microsoft.Extensions.Options;
 
 namespace JobGuardian.PostgreSql.DependencyInjection;
 
+/// <summary>
+/// Configures JobGuardian to use PostgreSQL for lease coordination and job state persistence.
+/// </summary>
 public static class JobGuardianBuilderExtensions
 {
+    /// <summary>
+    /// Configures JobGuardian to use a PostgreSQL connection string for persistence.
+    /// </summary>
+    /// <param name="builder">
+    /// The JobGuardian builder being configured.
+    /// </param>
+    /// <param name="connectionString">
+    /// The PostgreSQL connection string used by the persistence layer.
+    /// </param>
+    /// <returns>
+    /// The same builder so configuration calls can be chained.
+    /// </returns>
+    /// <exception cref="ArgumentException">
+    /// Thrown when the connection string is empty or whitespace.
+    /// </exception>
     public static JobGuardianBuilder UsePostgreSql(
         this JobGuardianBuilder builder,
         string connectionString)
@@ -35,6 +53,18 @@ public static class JobGuardianBuilderExtensions
             });
     }
 
+    /// <summary>
+    /// Configures JobGuardian to use the supplied PostgreSQL options.
+    /// </summary>
+    /// <param name="builder">
+    /// The JobGuardian builder being configured.
+    /// </param>
+    /// <param name="options">
+    /// The PostgreSQL options used for connection and storage setup.
+    /// </param>
+    /// <returns>
+    /// The same builder so additional configuration can be chained.
+    /// </returns>
     public static JobGuardianBuilder UsePostgreSql(
         this JobGuardianBuilder builder,
         PostgreSqlOptions options)

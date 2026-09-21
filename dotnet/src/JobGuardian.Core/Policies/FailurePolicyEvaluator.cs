@@ -3,9 +3,24 @@ using JobGuardian.Abstractions.Models;
 
 namespace JobGuardian.Core.Policies;
 
+/// <summary>
+/// Evaluates a job execution result against a configured failure policy.
+/// </summary>
 public sealed class FailurePolicyEvaluator
     : IFailurePolicyEvaluator
 {
+    /// <summary>
+    /// Evaluates the supplied execution result and returns the corresponding policy decision.
+    /// </summary>
+    /// <param name="result">
+    /// The execution result to evaluate.
+    /// </param>
+    /// <param name="policy">
+    /// The failure policy to apply.
+    /// </param>
+    /// <returns>
+    /// A decision indicating whether the job should continue or block.
+    /// </returns>
     public PolicyDecision Evaluate(
         ExecutionResult result,
         FailurePolicy policy)

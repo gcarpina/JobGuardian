@@ -1,9 +1,16 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+
+    <PackageId>JobGuardian.Abstractions</PackageId>
+
+    <Description>
+      Core abstractions, interfaces and contracts for JobGuardian, a cloud-native friendly framework
+      for
+      distributed job coordination, leader election and lease management.
+      This package contains the public APIs required by JobGuardian implementations and extensions.
+    </Description>
+
   </PropertyGroup>
 
 </Project>

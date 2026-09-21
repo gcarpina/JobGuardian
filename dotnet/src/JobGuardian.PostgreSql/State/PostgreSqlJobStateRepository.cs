@@ -11,12 +11,21 @@ namespace JobGuardian.PostgreSql.State;
 
 using JobGuardian.PostgreSql.Contracts;
 
+/// <summary>
+/// Persists JobGuardian job state in PostgreSQL.
+/// </summary>
 public sealed class PostgreSqlJobStateRepository
     : IJobStateRepository
 {
     private readonly IPostgreSqlConnectionFactory
         _connectionFactory;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PostgreSqlJobStateRepository"/> class.
+    /// </summary>
+    /// <param name="connectionFactory">
+    /// Factory used to create PostgreSQL database connections.
+    /// </param>
     public PostgreSqlJobStateRepository(
         IPostgreSqlConnectionFactory connectionFactory)
     {
@@ -24,6 +33,18 @@ public sealed class PostgreSqlJobStateRepository
             connectionFactory;
     }
 
+    /// <summary>
+    /// Gets the current state for the specified job.
+    /// </summary>
+    /// <param name="jobKey">
+    /// The logical identity of the job whose state is requested.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// Token used to cancel the operation.
+    /// </param>
+    /// <returns>
+    /// The current job state, or <c>null</c> when no state is persisted.
+    /// </returns>
     public async Task<JobState?> GetAsync(
         JobKey jobKey,
         CancellationToken cancellationToken = default)
@@ -59,6 +80,18 @@ public sealed class PostgreSqlJobStateRepository
             value);
     }
 
+    /// <summary>
+    /// Persists the state for the specified job.
+    /// </summary>
+    /// <param name="jobKey">
+    /// The logical identity of the job whose state should be written.
+    /// </param>
+    /// <param name="state">
+    /// The state to persist.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// Token used to cancel the operation.
+    /// </param>
     public async Task SetAsync(
         JobKey jobKey,
         JobState state,

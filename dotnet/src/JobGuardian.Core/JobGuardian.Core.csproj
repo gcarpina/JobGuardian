@@ -9,9 +9,17 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+    
+    <PackageId>JobGuardian.Core</PackageId>
+
+    <Description>
+      Core runtime for JobGuardian, providing distributed job coordination,
+      leader election, lease management and resilient execution across
+      multiple application instances. JobGuardian helps ensure that a
+      distributed job is executed by a single active owner at a time.
+      JobGuardian is not a scheduler.
+    </Description>
+
   </PropertyGroup>
 
 </Project>

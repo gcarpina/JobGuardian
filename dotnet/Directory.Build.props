@@ -1,0 +1,80 @@
+<Project>
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+
+        <Authors>JobGuardian Contributors</Authors>
+        <Company>JobGuardian Contributors</Company>
+
+        <Description>
+            JobGuardian is a cloud-native friendly framework for distributed job coordination,
+            leader election and lease management across multiple application instances.
+            It helps ensure that a distributed job is executed by a single active owner at a time.
+            JobGuardian is not a scheduler.
+        </Description>
+
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+
+        <PackageProjectUrl>
+            https://github.com/gcarpina/JobGuardian
+        </PackageProjectUrl>
+
+        <RepositoryUrl>
+            https://github.com/gcarpina/JobGuardian
+        </RepositoryUrl>
+
+        <RepositoryType>git</RepositoryType>
+
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+
+        <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+
+        <PackageTags>
+            distributed-jobs;job-coordination;leader-election;lease-management;cloud-native;background-processing;distributed-systems;high-availability;coordination;worker-services;multi-instance;distributed-locking;job-processing
+        </PackageTags>
+
+        <PackageReleaseNotes>
+            See GitHub Releases for release notes and migration guidance.
+        </PackageReleaseNotes>
+
+        <RepositoryBranch>main</RepositoryBranch>
+
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+        <IncludeSymbols>true</IncludeSymbols>
+
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+
+        <Deterministic>true</Deterministic>
+
+        <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">
+            true
+        </ContinuousIntegrationBuild>
+
+        <Copyright>Copyright (c) JobGuardian Contributors</Copyright>
+
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <WarningsAsErrors>CS1591</WarningsAsErrors>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="$(MSBuildThisFileDirectory)..\README.md"
+            Pack="true"
+            PackagePath="\" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.SourceLink.GitHub"
+            Version="8.0.0"
+            PrivateAssets="All" />
+    </ItemGroup>
+
+</Project>

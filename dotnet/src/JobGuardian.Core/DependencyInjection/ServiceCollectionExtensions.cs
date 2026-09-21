@@ -11,8 +11,20 @@ using JobGuardian.Core.State;
 
 namespace JobGuardian.Core.DependencyInjection;
 
+/// <summary>
+/// Registers the default JobGuardian services and job definitions in a dependency injection container.
+/// </summary>
 public static class ServiceCollectionExtensions
 {
+    /// <summary>
+    /// Adds the core JobGuardian services to the dependency injection container.
+    /// </summary>
+    /// <param name="services">
+    /// The service collection to configure.
+    /// </param>
+    /// <returns>
+    /// A <see cref="JobGuardianBuilder"/> that allows additional JobGuardian configuration.
+    /// </returns>
     public static JobGuardianBuilder AddJobGuardian(
         this IServiceCollection services)
     {
@@ -53,7 +65,24 @@ public static class ServiceCollectionExtensions
             services);
     }
 
-
+    /// <summary>
+    /// Registers a job implementation and its execution policy with JobGuardian.
+    /// </summary>
+    /// <typeparam name="TJob">
+    /// The job implementation type.
+    /// </typeparam>
+    /// <param name="services">
+    /// The service collection to update.
+    /// </param>
+    /// <param name="jobKey">
+    /// The logical key that identifies the job.
+    /// </param>
+    /// <param name="policy">
+    /// The lease and heartbeat policy for the job.
+    /// </param>
+    /// <returns>
+    /// The same service collection so additional registrations can be chained.
+    /// </returns>
     public static IServiceCollection AddJob<TJob>(
         this IServiceCollection services,
         JobKey jobKey,
