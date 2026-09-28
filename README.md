@@ -130,12 +130,19 @@ public sealed class InvoiceSynchronizationJob
 ## Register a Job
 
 ```csharp
+using JobGuardian.Abstractions.Models;
+using JobGuardian.Core.Models;
+
 services.AddJob<InvoiceSynchronizationJob>(
     new JobKey(
         "tenant-a",
         "billing",
         "invoice-sync"),
-    JobExecutionPolicy.IgnoreFailures);
+    new JobExecutionPolicy
+    {
+        LeaseDuration = TimeSpan.FromMinutes(1),
+        HeartbeatInterval = TimeSpan.FromSeconds(10)
+    });
 ```
 
 ---

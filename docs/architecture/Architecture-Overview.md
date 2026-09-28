@@ -879,7 +879,11 @@ Jobs are registered independently from provider configuration:
 ```csharp
 services.AddJob<MyJob>(
     jobKey,
-    JobExecutionPolicy.IgnoreFailures);
+    new JobExecutionPolicy
+    {
+        LeaseDuration = TimeSpan.FromMinutes(1),
+        HeartbeatInterval = TimeSpan.FromSeconds(10)
+    });
 ```
 
 This separation keeps workload registration independent from infrastructure concerns.
