@@ -10,12 +10,40 @@ using JobGuardian.PostgreSql.DependencyInjection;
 using JobGuardian.PostgreSql.Contracts;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace JobGuardian.PostgreSql.IntegrationTests.DependencyInjection;
 
 public sealed class FluentRegistrationTests
 {
+    [Fact]
+    public async Task UsePostgreSql_Should_Start_Host_With_Registered_Services()
+    {
+        // Arrange
+
+        using var host =
+            Host.CreateDefaultBuilder()
+                .ConfigureServices(
+                    services =>
+                        services
+                            .AddJobGuardian()
+                            .UsePostgreSql(
+                                "Host=localhost"))
+                .Build();
+
+        // Act
+
+        await host.StartAsync();
+
+        // Assert
+
+        Assert.Single(
+            host.Services.GetServices<IHostedService>());
+
+        await host.StopAsync();
+    }
+
     [Fact]
     public void CT1230_UsePostgreSql_Should_Register_LeaseStore()
     {

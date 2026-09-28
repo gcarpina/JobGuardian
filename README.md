@@ -60,7 +60,7 @@ JobGuardian guarantees that only one execution owner may execute a workload at a
 - Failure policy enforcement
 - Runtime state management
 - Manual reset workflows
-- InMemory provider
+- In-memory provider for local and single-process scenarios
 - PostgreSQL provider
 - Fluent registration model
 - Provider-based architecture
@@ -79,6 +79,9 @@ Key characteristics include:
 - support for multi-instance deployments
 - provider-based infrastructure abstraction
 - container-friendly execution model
+
+The in-memory provider coordinates executions only within one process. Use the PostgreSQL provider
+when multiple application instances must coordinate through shared leases.
 
 JobGuardian does not depend on Kubernetes-specific APIs and can be deployed in any environment capable of hosting the current implementation.
 

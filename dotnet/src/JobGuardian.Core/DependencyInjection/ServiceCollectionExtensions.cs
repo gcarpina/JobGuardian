@@ -1,13 +1,15 @@
-using JobGuardian.Core.Hosting;
-using Microsoft.Extensions.DependencyInjection;
 using JobGuardian.Abstractions.Contracts;
-using JobGuardian.Core.Models;
 using JobGuardian.Abstractions.Models;
+using JobGuardian.Core.Contracts;
 using JobGuardian.Core.Execution;
-using JobGuardian.Core.Options;
+using JobGuardian.Core.Hosting;
 using JobGuardian.Core.Identity;
+using JobGuardian.Core.LeaseStore;
+using JobGuardian.Core.Models;
+using JobGuardian.Core.Options;
 using JobGuardian.Core.Policies;
 using JobGuardian.Core.State;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace JobGuardian.Core.DependencyInjection;
 
@@ -40,6 +42,14 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<
             IExecutionIdentityProvider,
             MachineNameExecutionIdentityProvider>();
+
+        services.AddSingleton<
+            ILeaseStore,
+            InMemoryLeaseStore>();
+
+        services.AddSingleton<
+            ILeaseHeartbeatService,
+            LeaseHeartbeatService>();
 
         services.AddSingleton<
             IJobExecutionCoordinator,

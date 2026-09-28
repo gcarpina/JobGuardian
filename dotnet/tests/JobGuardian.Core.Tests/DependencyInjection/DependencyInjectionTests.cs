@@ -51,6 +51,29 @@ public sealed class DependencyInjectionTests
     }
 
     [Fact]
+    public async Task AddJobGuardian_Should_Start_Host_With_Default_Configuration()
+    {
+        // Arrange
+
+        using var host =
+            Host.CreateDefaultBuilder()
+                .ConfigureServices(
+                    services => services.AddJobGuardian())
+                .Build();
+
+        // Act
+
+        await host.StartAsync();
+
+        // Assert
+
+        Assert.Single(
+            host.Services.GetServices<IHostedService>());
+
+        await host.StopAsync();
+    }
+
+    [Fact]
     public void CT210_AddJob_Should_Register_Job_Type()
     {
         // Arrange

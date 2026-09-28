@@ -1,6 +1,6 @@
 # Quick Start
 
-This guide shows how to create and run a distributed job with JobGuardian in a few minutes.
+This guide shows how to create and run a job with JobGuardian in a few minutes.
 
 ---
 
@@ -10,9 +10,11 @@ This guide shows how to create and run a distributed job with JobGuardian in a f
 - Dependency Injection
 - Hosted Services
 
-PostgreSQL is optional.
+PostgreSQL is optional for local, single-process scenarios. It is required when multiple
+application instances must coordinate execution.
 
-The framework can run entirely in memory.
+The in-memory configuration does not coordinate leases across processes and loses its lease state
+when the process exits.
 
 ---
 
@@ -45,11 +47,13 @@ public sealed class InvoiceSynchronizationJob
 services.AddJobGuardian();
 ```
 
-This configuration requires no external infrastructure.
+This configuration requires no external infrastructure and is suitable for local development or a
+single application process. It does not provide distributed coordination across multiple instances.
 
-Job state is stored using:
+Job leases and job state are stored in memory using:
 
 ```text
+InMemoryLeaseStore
 InMemoryJobStateRepository
 ```
 
