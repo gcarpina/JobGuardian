@@ -154,29 +154,20 @@ DELETE RECORD
 
 ---
 
-## Storage Model
+## Implemented PostgreSQL Schema
 
-Suggested schema:
+The PostgreSQL provider uses the schema script at
+`sql/postgresql/V001_initial_schema.sql`. The runtime currently uses:
 
-```sql
-CREATE TABLE job_state
-(
-    tenant          VARCHAR(100) NOT NULL,
-    domain          VARCHAR(100) NOT NULL,
-    job_name        VARCHAR(200) NOT NULL,
+- `jobguardian_active_executions` for distributed leases
+- `jobguardian_job_state` for persisted non-default job state
 
-    state           VARCHAR(50) NOT NULL,
+The schema script also defines execution-history and audit tables for future work. Their
+presence in the script does not mean those capabilities are implemented or supported by the
+current runtime.
 
-    updated_at_utc  TIMESTAMPTZ NOT NULL,
-
-    PRIMARY KEY
-    (
-        tenant,
-        domain,
-        job_name
-    )
-);
-```
+The provider does not apply schema changes automatically. Operators must provision the schema
+before starting the PostgreSQL-backed runtime.
 
 ---
 

@@ -362,14 +362,22 @@ ADR-011 Failure Handling and Execution Outcome Model
 
 ## Follow-Up Work
 
+Implemented in the current runtime:
+
 ```text
 ExecutionResult
 
 Failure Policy Engine
 
-Execution History
+Persistent Job State Storage
 
 Administrative Reset Operations
+```
+
+Deferred beyond the MVP:
+
+```text
+Execution History
 
 Dashboard State Visualization
 

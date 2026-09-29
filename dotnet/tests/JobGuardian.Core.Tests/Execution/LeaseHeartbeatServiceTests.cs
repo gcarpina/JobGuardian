@@ -63,13 +63,29 @@ public sealed class LeaseHeartbeatServiceTests
             TestData.CreateExecution(
                 "owner-a");
 
+        var twoRenewalsCompleted =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var renewCount = 0;
+
         leaseStore
             .RenewAsync(
                 Arg.Any<JobKey>(),
                 Arg.Any<Guid>(),
                 Arg.Any<TimeSpan>(),
                 Arg.Any<CancellationToken>())
-            .Returns(true);
+            .Returns(
+                _ =>
+                {
+                    if (Interlocked.Increment(
+                            ref renewCount) >= 2)
+                    {
+                        twoRenewalsCompleted.TrySetResult();
+                    }
+
+                    return true;
+                });
 
         var heartbeat =
             new LeaseHeartbeatService(
@@ -89,24 +105,22 @@ public sealed class LeaseHeartbeatServiceTests
                 options,
                 cancellationTokenSource.Token);
 
-        await Task.Delay(
-            50);
-
-        cancellationTokenSource.Cancel();
+        try
+        {
+            await twoRenewalsCompleted.Task.WaitAsync(
+                TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            cancellationTokenSource.Cancel();
+        }
 
         await task;
 
         // Assert
 
-        var renewCalls =
-            leaseStore
-                .ReceivedCalls()
-                .Count(call =>
-                    call.GetMethodInfo().Name ==
-                    nameof(ILeaseStore.RenewAsync));
-
         Assert.True(
-            renewCalls >= 2);
+            Volatile.Read(ref renewCount) >= 2);
     }
 
     [Fact]

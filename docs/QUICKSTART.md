@@ -44,6 +44,8 @@ public sealed class InvoiceSynchronizationJob
 ## In-Memory Configuration
 
 ```csharp
+using JobGuardian.Core.DependencyInjection;
+
 services.AddJobGuardian();
 ```
 
@@ -64,6 +66,7 @@ InMemoryJobStateRepository
 ```csharp
 using JobGuardian.Abstractions.Enums;
 using JobGuardian.Abstractions.Models;
+using JobGuardian.Core.DependencyInjection;
 using JobGuardian.Core.Models;
 
 services.AddJob<InvoiceSynchronizationJob>(
@@ -104,8 +107,22 @@ JobGuardian automatically starts its hosted service.
 # Using PostgreSQL
 
 For distributed execution across multiple application instances, enable the PostgreSQL provider.
+Reference the `JobGuardian.Core` and `JobGuardian.PostgreSql` packages. Apply the repository
+schema script to the target database before starting the application; the provider does not run
+migrations automatically. For example, against a new database:
+
+```sh
+psql "$DATABASE_URL" -f sql/postgresql/V001_initial_schema.sql
+```
+
+The script also creates history and audit tables reserved for future work; the current runtime
+uses the lease and job-state tables only. Provide `connectionString` from application
+configuration rather than hard-coding credentials.
 
 ```csharp
+using JobGuardian.Core.DependencyInjection;
+using JobGuardian.PostgreSql.DependencyInjection;
+
 services
     .AddJobGuardian()
     .UsePostgreSql(
@@ -116,7 +133,7 @@ services
 
 # Failure Policies
 
-## IgnoreFailures
+## Ignore
 
 ```csharp
 FailurePolicy.Ignore
@@ -152,7 +169,15 @@ A manual reset is required before execution can continue.
 
 # Reset a Blocked Job
 
+Resolve `IJobStateManager` from the application's dependency injection container:
+
 ```csharp
+using JobGuardian.Abstractions.Contracts;
+using Microsoft.Extensions.DependencyInjection;
+
+var jobStateManager =
+    serviceProvider.GetRequiredService<IJobStateManager>();
+
 await jobStateManager.ResetAsync(
     jobKey);
 ```

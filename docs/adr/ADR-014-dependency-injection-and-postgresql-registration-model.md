@@ -446,7 +446,7 @@ UsePostgreSql_Should_Reject_Empty_ConnectionString
 Compliance with this ADR is objectively verified by the execution of tests:
 
 ```text
-CT1200 - CT1280
+CT1200 - CT1290
 ```
 
 Successful execution of these tests demonstrates that the provider registration model behaves according to the architectural decision.

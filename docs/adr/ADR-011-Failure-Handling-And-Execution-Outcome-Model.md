@@ -207,7 +207,7 @@ The job was never executed.
 
 ---
 
-## Relationship With Future Job State Model
+## Relationship With Job State Model
 
 ExecutionOutcome represents the result of a single execution attempt.
 
@@ -221,12 +221,11 @@ Examples:
 
 ExecutionOutcome shall not be interpreted as a durable runtime state.
 
-Future runtime versions may introduce a dedicated Job State Model responsible for representing persistent lifecycle states such as:
+ADR-012 introduces the dedicated Job State Model responsible for representing job eligibility over time:
 
 - Eligible
 - Running
 - Blocked
-- Reset
 
 The Job State Model and ExecutionOutcome serve different purposes:
 
@@ -237,7 +236,7 @@ The Job State Model and ExecutionOutcome serve different purposes:
 
 ExecutionOutcome remains focused exclusively on describing how a specific execution attempt terminated.
 
-Future Failure Policies, Execution History, administrative operations and dashboard views may consume ExecutionOutcome values, but are not represented by ExecutionOutcome itself.
+Failure Policies, Execution History, administrative operations and dashboard views may consume `ExecutionOutcome` values, but are not represented by `ExecutionOutcome` itself. The current runtime implements failure-policy evaluation and job-state updates; execution history and dashboard capabilities remain outside the MVP.
 
 ---
 
@@ -259,52 +258,32 @@ The runtime shall map execution events according to the following table.
 
 Execution outcomes are independent from Failure Policies.
 
-Future Failure Policies shall consume outcomes rather than infer state directly from runtime behavior.
+Failure Policies consume outcomes rather than infer state directly from runtime behavior.
 
-Example:
+The current implementation supports `Ignore` and `RequireManualReset`:
 
 ```text
 Failed
-    ↓
-Policy Evaluation
-    ↓
-Retry
+→ Eligible (Ignore)
 
-or
-
-RequireManualReset
-
-or
-
-Continue
+Failed
+→ Blocked (RequireManualReset)
 ```
-
-The outcome model is therefore a foundational building block for future policy evaluation.
 
 ExecutionOutcome does not imply any specific runtime action.
 
 The same outcome may produce different actions depending on the configured Failure Policy.
 
-Examples:
+Retry is not currently implemented. The supported policies determine whether a failure leaves
+the job eligible or blocks it:
 
 ```text
-Failed
-→ Continue
-
-Failed
-→ Retry
-
-Failed
-→ RequireManualReset
-
-LeaseLost
-→ Retry
-
-LeaseLost
-→ RequireManualReset
+Outcome       Ignore             RequireManualReset
+Failed        Eligible           Blocked
+LeaseLost     Eligible           Blocked
 ```
 
-Failure Policies are responsible for evaluating outcomes and deciding subsequent runtime behavior.
+Failure Policies evaluate outcomes and determine the supported subsequent runtime behavior.
 
 ---
 
@@ -423,7 +402,17 @@ The domain model should not depend on storage.
 
 ## Follow-Up Work
 
-Planned future activities:
+Implemented in the current runtime:
+
+```text
+ExecutionResult mapping
+
+Failure Policy evaluation
+
+Job State integration
+```
+
+Deferred beyond the MVP:
 
 ```text
 Execution History

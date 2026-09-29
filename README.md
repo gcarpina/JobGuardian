@@ -220,6 +220,10 @@ Key ADRs:
 
 # Current Status
 
+The MVP implementation is feature-complete for the current preview scope. This does not mean
+that version 1.0 has been released or that the public API is stable. See the
+[MVP exit criteria](./docs/MVP-EXIT-CRITERIA.md) and [changelog](./CHANGELOG.md).
+
 Current MVP capabilities:
 
 - distributed lease coordination
