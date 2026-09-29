@@ -130,6 +130,7 @@ public sealed class InvoiceSynchronizationJob
 ## Register a Job
 
 ```csharp
+using JobGuardian.Abstractions.Enums;
 using JobGuardian.Abstractions.Models;
 using JobGuardian.Core.Models;
 
@@ -141,7 +142,8 @@ services.AddJob<InvoiceSynchronizationJob>(
     new JobExecutionPolicy
     {
         LeaseDuration = TimeSpan.FromMinutes(1),
-        HeartbeatInterval = TimeSpan.FromSeconds(10)
+        HeartbeatInterval = TimeSpan.FromSeconds(10),
+        FailurePolicy = FailurePolicy.RequireManualReset
     });
 ```
 
@@ -234,7 +236,7 @@ Current MVP capabilities:
 Current automated test coverage:
 
 ```text
-94 passing tests
+106 passing tests
 ```
 
 ---

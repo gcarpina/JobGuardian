@@ -1,3 +1,5 @@
+using JobGuardian.Abstractions.Enums;
+
 namespace JobGuardian.Core.Models;
 
 /// <summary>
@@ -22,4 +24,13 @@ public sealed record JobExecutionPolicy
         get;
         init;
     }
+
+    /// <summary>
+    /// Gets the policy used to determine job eligibility after an execution completes.
+    /// </summary>
+    public FailurePolicy FailurePolicy
+    {
+        get;
+        init;
+    } = JobGuardian.Abstractions.Enums.FailurePolicy.Ignore;
 }

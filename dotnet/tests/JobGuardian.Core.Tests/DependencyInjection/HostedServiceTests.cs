@@ -209,7 +209,8 @@ public sealed class HostedServiceTests
                 capturedOptions =
                     callInfo.Arg<JobExecutionOptions>();
 
-                return true;
+                return new ExecutionResult(
+                    ExecutionOutcome.Succeeded);
             });
 
         // Act
@@ -261,7 +262,8 @@ public sealed class HostedServiceTests
                 capturedExecution =
                     callInfo.Arg<ActiveExecution>();
 
-                return true;
+                return new ExecutionResult(
+                    ExecutionOutcome.Succeeded);
             });
 
         // Act
@@ -406,7 +408,8 @@ public sealed class HostedServiceTests
                         "Boom");
                 }
 
-                return true;
+                return new ExecutionResult(
+                    ExecutionOutcome.Succeeded);
             });
 
         // Act
@@ -478,7 +481,8 @@ public sealed class HostedServiceTests
                 capturedExecution =
                     callInfo.Arg<ActiveExecution>();
 
-                return true;
+                return new ExecutionResult(
+                    ExecutionOutcome.Succeeded);
             });
 
         // Act
@@ -517,7 +521,7 @@ public sealed class HostedServiceTests
                 Arg.Any<Func<CancellationToken, Task>>(),
                 Arg.Any<CancellationToken>())
             .Returns(
-                Task.FromException<bool>(
+                Task.FromException<ExecutionResult>(
                     new InvalidOperationException(
                         "Boom")));
 
@@ -655,6 +659,43 @@ public sealed class HostedServiceTests
                 Arg.Any<ActiveExecution>(),
                 Arg.Any<JobExecutionOptions>(),
                 Arg.Any<Func<CancellationToken, Task>>(),
+                Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CT940_HostedService_Should_Apply_Execution_Result_Using_Job_Failure_Policy()
+    {
+        var executionResult =
+            new ExecutionResult(
+                ExecutionOutcome.Failed,
+                new InvalidOperationException("Job failed"));
+
+        var context =
+            new HostedServiceBuilder()
+                .WithFailurePolicy(
+                    FailurePolicy.RequireManualReset)
+                .AddJob<DummyJob>()
+                .Build();
+
+        context.Coordinator
+            .ExecuteAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<JobExecutionOptions>(),
+                Arg.Any<Func<CancellationToken, Task>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromResult(executionResult));
+
+        await context.HostedService.ExecuteJobsAsync(
+            CancellationToken.None);
+
+        await context.StateManager
+            .Received(1)
+            .HandleExecutionResultAsync(
+                Arg.Is<JobKey>(
+                    key => key.JobName == nameof(DummyJob)),
+                FailurePolicy.RequireManualReset,
+                executionResult,
                 Arg.Any<CancellationToken>());
     }
 }

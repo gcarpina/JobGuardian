@@ -61,6 +61,11 @@ public sealed class JobStateManager
         ExecutionResult executionResult,
         CancellationToken cancellationToken = default)
     {
+        if (executionResult.Outcome == ExecutionOutcome.Skipped)
+        {
+            return;
+        }
+
         var currentState =
             await GetCurrentStateAsync(
                 jobKey,

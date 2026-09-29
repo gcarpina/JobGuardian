@@ -51,7 +51,7 @@ public sealed class DependencyInjectionTests
     }
 
     [Fact]
-    public async Task AddJobGuardian_Should_Start_Host_With_Default_Configuration()
+    public async Task CT205_AddJobGuardian_Should_Start_Host_With_Default_Configuration()
     {
         // Arrange
 

@@ -12,7 +12,7 @@ public sealed class InMemoryLeaseStoreTests
             "invoice-sync");
 
     [Fact]
-    public async Task TryAcquireAsync_Should_Allow_Only_One_Concurrent_Owner()
+    public async Task CT160_TryAcquireAsync_Should_Allow_Only_One_Concurrent_Owner()
     {
         var store =
             new InMemoryLeaseStore();
@@ -45,7 +45,7 @@ public sealed class InMemoryLeaseStoreTests
     }
 
     [Fact]
-    public async Task TryAcquireAsync_Should_Transfer_Expired_Lease()
+    public async Task CT170_TryAcquireAsync_Should_Transfer_Expired_Lease()
     {
         var store =
             new InMemoryLeaseStore();
@@ -79,7 +79,7 @@ public sealed class InMemoryLeaseStoreTests
     }
 
     [Fact]
-    public async Task RenewAsync_Should_Require_Current_Owner_And_Active_Lease()
+    public async Task CT180_RenewAsync_Should_Require_Current_Owner_And_Active_Lease()
     {
         var store =
             new InMemoryLeaseStore();
@@ -106,7 +106,7 @@ public sealed class InMemoryLeaseStoreTests
     }
 
     [Fact]
-    public async Task ReleaseAsync_Should_Not_Release_Another_Execution_Lease()
+    public async Task CT190_ReleaseAsync_Should_Not_Release_Another_Execution_Lease()
     {
         var store =
             new InMemoryLeaseStore();

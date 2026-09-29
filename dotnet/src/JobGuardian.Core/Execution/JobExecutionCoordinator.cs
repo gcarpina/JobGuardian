@@ -1,4 +1,5 @@
 using JobGuardian.Abstractions.Contracts;
+using JobGuardian.Abstractions.Enums;
 using JobGuardian.Abstractions.Models;
 using JobGuardian.Core.Contracts;
 using JobGuardian.Core.Models;
@@ -48,24 +49,36 @@ public sealed class JobExecutionCoordinator
     /// Token used to cancel the execution.
     /// </param>
     /// <returns>
-    /// <c>true</c> when the job completes successfully under an active lease; otherwise, <c>false</c>
-    /// when the lease is unavailable or cannot be maintained.
+    /// The outcome of the execution attempt.
     /// </returns>
-    public async Task<bool> ExecuteAsync(
+    public async Task<ExecutionResult> ExecuteAsync(
         ActiveExecution execution,
         JobExecutionOptions options,
         Func<CancellationToken, Task> job,
         CancellationToken cancellationToken = default)
     {
-        var acquired =
-            await _leaseStore.TryAcquireAsync(
-                execution,
-                options.LeaseDuration,
-                cancellationToken);
+        bool acquired;
+
+        try
+        {
+            acquired =
+                await _leaseStore.TryAcquireAsync(
+                    execution,
+                    options.LeaseDuration,
+                    cancellationToken);
+        }
+        catch (OperationCanceledException exception)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            return new ExecutionResult(
+                ExecutionOutcome.Cancelled,
+                exception);
+        }
 
         if (!acquired)
         {
-            return false;
+            return new ExecutionResult(
+                ExecutionOutcome.Skipped);
         }
 
         using var executionTokenSource =
@@ -75,17 +88,44 @@ public sealed class JobExecutionCoordinator
         using var heartbeatTokenSource =
             new CancellationTokenSource();
 
-        var heartbeatTask =
-            _heartbeatService.RunAsync(
-                execution,
-                options,
-                heartbeatTokenSource.Token);
+        Task<bool>? heartbeatTask = null;
+        var result =
+            new ExecutionResult(
+                ExecutionOutcome.Failed,
+                new InvalidOperationException(
+                    "The execution ended without producing a result."));
 
         try
         {
-            var jobTask =
-                job(
-                    executionTokenSource.Token);
+            try
+            {
+                heartbeatTask =
+                    _heartbeatService.RunAsync(
+                        execution,
+                        options,
+                        heartbeatTokenSource.Token);
+            }
+            catch (Exception exception)
+            {
+                heartbeatTask =
+                    Task.FromException<bool>(
+                        exception);
+            }
+
+            Task jobTask;
+
+            try
+            {
+                jobTask =
+                    job(
+                        executionTokenSource.Token);
+            }
+            catch (Exception exception)
+            {
+                jobTask =
+                    Task.FromException(
+                        exception);
+            }
 
             var completedTask =
                 await Task.WhenAny(
@@ -94,45 +134,171 @@ public sealed class JobExecutionCoordinator
 
             if (completedTask == heartbeatTask)
             {
-                var heartbeatSucceeded =
-                    await heartbeatTask;
+                bool heartbeatSucceeded;
+                Exception? heartbeatException = null;
+
+                try
+                {
+                    heartbeatSucceeded =
+                        await heartbeatTask;
+                }
+                catch (OperationCanceledException)
+                    when (heartbeatTokenSource.IsCancellationRequested)
+                {
+                    heartbeatSucceeded = true;
+                }
+                catch (OperationCanceledException exception)
+                {
+                    heartbeatSucceeded = false;
+                    heartbeatException = exception;
+                }
+                catch (Exception exception)
+                {
+                    heartbeatSucceeded = false;
+                    heartbeatException = exception;
+                }
 
                 if (!heartbeatSucceeded)
                 {
                     executionTokenSource.Cancel();
+                    Exception? jobException = null;
 
                     try
                     {
                         await jobTask;
                     }
                     catch (OperationCanceledException)
+                        when (executionTokenSource.IsCancellationRequested)
                     {
                     }
+                    catch (Exception exception)
+                    {
+                        jobException = exception;
+                    }
 
-                    return false;
+                    result = new ExecutionResult(
+                        ExecutionOutcome.LeaseLost,
+                        heartbeatException is not null && jobException is not null
+                            ? new AggregateException(
+                                heartbeatException,
+                                jobException)
+                            : heartbeatException ?? jobException);
+                }
+
+                if (heartbeatSucceeded)
+                {
+                    result =
+                        await GetJobResultAsync(
+                            jobTask,
+                            cancellationToken);
                 }
             }
-
-            await jobTask;
-
-            return true;
+            else
+            {
+                result =
+                    await GetJobResultAsync(
+                        jobTask,
+                        cancellationToken);
+            }
         }
         finally
         {
             heartbeatTokenSource.Cancel();
 
-            try
+            if (heartbeatTask is not null)
             {
-                await heartbeatTask;
-            }
-            catch (OperationCanceledException)
-            {
+                try
+                {
+                    var heartbeatSucceeded =
+                        await heartbeatTask;
+
+                    if (!heartbeatSucceeded)
+                    {
+                        result =
+                            ToLeaseLostResult(
+                                result,
+                                new InvalidOperationException(
+                                    "Lease heartbeat stopped before execution completed."));
+                    }
+                }
+                catch (OperationCanceledException)
+                    when (heartbeatTokenSource.IsCancellationRequested)
+                {
+                }
+                catch (Exception exception)
+                {
+                    result =
+                        ToLeaseLostResult(
+                            result,
+                            exception);
+                }
             }
 
-            await _leaseStore.ReleaseAsync(
-                execution.JobKey,
-                execution.ExecutionId,
-                cancellationToken);
+            try
+            {
+                var released =
+                    await _leaseStore.ReleaseAsync(
+                        execution.JobKey,
+                        execution.ExecutionId,
+                        CancellationToken.None);
+
+                if (!released)
+                {
+                    result =
+                        ToLeaseLostResult(
+                            result,
+                            new InvalidOperationException(
+                                "The execution no longer owns the lease during release."));
+                }
+            }
+            catch (Exception exception)
+            {
+                result =
+                    ToLeaseLostResult(
+                        result,
+                        exception);
+            }
         }
+
+        return result;
+    }
+
+    private static async Task<ExecutionResult> GetJobResultAsync(
+        Task jobTask,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await jobTask;
+
+            return new ExecutionResult(
+                ExecutionOutcome.Succeeded);
+        }
+        catch (OperationCanceledException exception)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            return new ExecutionResult(
+                ExecutionOutcome.Cancelled,
+                exception);
+        }
+        catch (Exception exception)
+        {
+            return new ExecutionResult(
+                ExecutionOutcome.Failed,
+                exception);
+        }
+    }
+
+    private static ExecutionResult ToLeaseLostResult(
+        ExecutionResult result,
+        Exception leaseException)
+    {
+        return new ExecutionResult(
+            ExecutionOutcome.LeaseLost,
+            result.Exception is null
+                ? leaseException
+                : new AggregateException(
+                    result.Exception,
+                    leaseException));
     }
 }

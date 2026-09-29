@@ -102,7 +102,7 @@ internal sealed class JobGuardianHostedService
     }
 
     internal async Task ExecuteJobsAsync(
-    CancellationToken cancellationToken)
+        CancellationToken cancellationToken)
     {
         foreach (var descriptor in Jobs)
         {
@@ -128,17 +128,58 @@ internal sealed class JobGuardianHostedService
 
             try
             {
-                await _coordinator.ExecuteAsync(
-                    CreateExecution(descriptor),
-                    CreateOptions(descriptor),
-                    job.ExecuteAsync,
-                    cancellationToken);
+                var executionResult =
+                    await _coordinator.ExecuteAsync(
+                        CreateExecution(descriptor),
+                        CreateOptions(descriptor),
+                        job.ExecuteAsync,
+                        cancellationToken);
+
+                try
+                {
+                    await _stateManager.HandleExecutionResultAsync(
+                        descriptor.JobKey,
+                        descriptor.Policy.FailurePolicy,
+                        executionResult,
+                        CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(
+                        ex,
+                        "Failed to update state for job {JobKey} after outcome {Outcome}",
+                        descriptor.JobKey,
+                        executionResult.Outcome);
+                }
+
+                switch (executionResult.Outcome)
+                {
+                    case ExecutionOutcome.Failed:
+                        _logger.LogError(
+                            executionResult.Exception,
+                            "Job {JobKey} execution failed",
+                            descriptor.JobKey);
+                        break;
+
+                    case ExecutionOutcome.LeaseLost:
+                        _logger.LogWarning(
+                            executionResult.Exception,
+                            "Job {JobKey} execution stopped after lease ownership was lost",
+                            descriptor.JobKey);
+                        break;
+
+                    case ExecutionOutcome.Cancelled:
+                        _logger.LogInformation(
+                            "Job {JobKey} execution was cancelled",
+                            descriptor.JobKey);
+                        break;
+                }
             }
             catch (Exception ex)
             {
                 _logger.LogError(
                     ex,
-                    "Job {JobKey} execution failed",
+                    "Job {JobKey} execution coordination failed",
                     descriptor.JobKey);
             }
         }

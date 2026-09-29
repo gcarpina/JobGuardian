@@ -285,6 +285,32 @@ public sealed class JobStateManagerTests
             state);
     }
 
+    [Fact]
+    public async Task CT850_HandleExecutionResult_Should_Leave_State_Unchanged_When_Execution_Is_Skipped()
+    {
+        var repository =
+            Substitute.For<IJobStateRepository>();
+
+        var manager =
+            CreateManager(repository);
+
+        await manager.HandleExecutionResultAsync(
+            new JobKey(
+                "tenant-a",
+                "billing",
+                "invoice-sync"),
+            FailurePolicy.RequireManualReset,
+            new ExecutionResult(
+                ExecutionOutcome.Skipped));
+
+        await repository
+            .DidNotReceive()
+            .SetAsync(
+                Arg.Any<JobKey>(),
+                Arg.Any<JobState>(),
+                Arg.Any<CancellationToken>());
+    }
+
     private static JobStateManager CreateManager(
         IJobStateRepository repository)
     {

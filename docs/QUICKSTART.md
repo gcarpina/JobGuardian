@@ -62,6 +62,7 @@ InMemoryJobStateRepository
 # Step 3 - Register a Job
 
 ```csharp
+using JobGuardian.Abstractions.Enums;
 using JobGuardian.Abstractions.Models;
 using JobGuardian.Core.Models;
 
@@ -73,7 +74,8 @@ services.AddJob<InvoiceSynchronizationJob>(
     new JobExecutionPolicy
     {
         LeaseDuration = TimeSpan.FromMinutes(1),
-        HeartbeatInterval = TimeSpan.FromSeconds(10)
+        HeartbeatInterval = TimeSpan.FromSeconds(10),
+        FailurePolicy = FailurePolicy.RequireManualReset
     });
 ```
 
@@ -117,7 +119,7 @@ services
 ## IgnoreFailures
 
 ```csharp
-JobExecutionPolicy.IgnoreFailures
+FailurePolicy.Ignore
 ```
 
 Execution failures do not block future executions.
@@ -133,7 +135,7 @@ Eligible
 ## RequireManualReset
 
 ```csharp
-JobExecutionPolicy.RequireManualReset
+FailurePolicy.RequireManualReset
 ```
 
 Execution failures block future executions.

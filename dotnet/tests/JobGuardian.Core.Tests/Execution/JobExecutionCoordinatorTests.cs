@@ -1,4 +1,5 @@
 using JobGuardian.Abstractions.Models;
+using JobGuardian.Abstractions.Enums;
 using JobGuardian.Core.Execution;
 using JobGuardian.Core.Models;
 using JobGuardian.Core.Tests.Infrastructure;
@@ -63,8 +64,9 @@ public sealed class JobExecutionCoordinatorTests
 
         // Assert
 
-        Assert.True(
-            result);
+        Assert.Equal(
+            ExecutionOutcome.Succeeded,
+            result.Outcome);
 
         Assert.True(
             jobExecuted);
@@ -117,8 +119,9 @@ public sealed class JobExecutionCoordinatorTests
 
         // Assert
 
-        Assert.False(
-            result);
+        Assert.Equal(
+            ExecutionOutcome.Skipped,
+            result.Outcome);
 
         Assert.False(
             jobExecuted);
@@ -186,6 +189,52 @@ public sealed class JobExecutionCoordinatorTests
     }
 
     [Fact]
+    public async Task CT155_Execute_When_Lease_Release_Fails_Should_Return_LeaseLost()
+    {
+        var leaseStore =
+            CreateLeaseStore();
+
+        leaseStore
+            .TryAcquireAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        leaseStore
+            .ReleaseAsync(
+                Arg.Any<JobKey>(),
+                Arg.Any<Guid>(),
+                Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var heartbeatService =
+            CreateHeartbeatService();
+
+        heartbeatService
+            .RunAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<JobExecutionOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var coordinator =
+            new JobExecutionCoordinator(
+                leaseStore,
+                heartbeatService);
+
+        var result =
+            await coordinator.ExecuteAsync(
+                TestData.CreateExecution("owner-a"),
+                TestData.CreateOptions(),
+                _ => Task.CompletedTask);
+
+        Assert.Equal(
+            ExecutionOutcome.LeaseLost,
+            result.Outcome);
+    }
+
+    [Fact]
     public async Task CT104_Execute_Should_Release_Lease_When_Job_Fails()
     {
         // Arrange
@@ -222,16 +271,24 @@ public sealed class JobExecutionCoordinatorTests
         var options =
             TestData.CreateOptions();
 
-        // Act & Assert
+        // Act
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () =>
-                coordinator.ExecuteAsync(
-                    execution,
-                    options,
-                    _ =>
-                        throw new InvalidOperationException(
-                            "Test exception")));
+        var result =
+            await coordinator.ExecuteAsync(
+                execution,
+                options,
+                _ =>
+                    throw new InvalidOperationException(
+                        "Test exception"));
+
+        // Assert
+
+        Assert.Equal(
+            ExecutionOutcome.Failed,
+            result.Outcome);
+
+        Assert.IsType<InvalidOperationException>(
+            result.Exception);
 
         await leaseStore
             .Received(1)
@@ -278,17 +335,25 @@ public sealed class JobExecutionCoordinatorTests
         var options =
             TestData.CreateOptions();
 
-        // Act + Assert
+        // Act
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () =>
-                coordinator.ExecuteAsync(
-                    execution,
-                    options,
-                    _ =>
-                        Task.FromException(
-                            new InvalidOperationException(
-                                "Async failure"))));
+        var result =
+            await coordinator.ExecuteAsync(
+                execution,
+                options,
+                _ =>
+                    Task.FromException(
+                        new InvalidOperationException(
+                            "Async failure")));
+
+        // Assert
+
+        Assert.Equal(
+            ExecutionOutcome.Failed,
+            result.Outcome);
+
+        Assert.IsType<InvalidOperationException>(
+            result.Exception);
 
         await leaseStore
             .Received(1)
@@ -514,8 +579,9 @@ public sealed class JobExecutionCoordinatorTests
         Assert.True(
             tokenCancelled);
 
-        Assert.False(
-            result);
+        Assert.Equal(
+            ExecutionOutcome.LeaseLost,
+            result.Outcome);
     }
 
     [Fact]
@@ -581,8 +647,9 @@ public sealed class JobExecutionCoordinatorTests
 
         // Assert
 
-        Assert.False(
-            result);
+        Assert.Equal(
+            ExecutionOutcome.LeaseLost,
+            result.Outcome);
 
         await leaseStore
             .Received(1)
@@ -679,11 +746,15 @@ public sealed class JobExecutionCoordinatorTests
 
         // Assert
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            async () => await executeTask);
+        var result =
+            await executeTask;
 
         Assert.True(
             jobCancelled);
+
+        Assert.Equal(
+            ExecutionOutcome.Cancelled,
+            result.Outcome);
 
         await leaseStore
             .Received(1)

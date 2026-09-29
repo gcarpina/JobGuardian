@@ -41,6 +41,9 @@ internal sealed class HostedServiceBuilder
     private RuntimeOptions _runtimeOptions =
         TestDefaults.DefaultRuntimeOptions;
 
+    private JobExecutionPolicy _jobExecutionPolicy =
+        TestDefaults.DefaultPolicy;
+
     private ILogger<JobGuardianHostedService>
         _logger;
 
@@ -48,6 +51,17 @@ internal sealed class HostedServiceBuilder
     {
         _coordinator =
             Substitute.For<IJobExecutionCoordinator>();
+
+        _coordinator
+            .ExecuteAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<JobExecutionOptions>(),
+                Arg.Any<Func<CancellationToken, Task>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromResult(
+                    new ExecutionResult(
+                        ExecutionOutcome.Succeeded)));
 
         _serviceProvider =
             Substitute.For<IServiceProvider>();
@@ -89,7 +103,8 @@ internal sealed class HostedServiceBuilder
     }
 
     public HostedServiceBuilder AddJob<TJob>(
-        TJob instance)
+        TJob instance,
+        JobExecutionPolicy? policy = null)
         where TJob : class, IJob
     {
         _serviceProvider
@@ -103,7 +118,19 @@ internal sealed class HostedServiceBuilder
                     "finance",
                     typeof(TJob).Name),
                 typeof(TJob),
-                TestDefaults.DefaultPolicy));
+                policy ?? _jobExecutionPolicy));
+
+        return this;
+    }
+
+    public HostedServiceBuilder WithFailurePolicy(
+        FailurePolicy failurePolicy)
+    {
+        _jobExecutionPolicy =
+            _jobExecutionPolicy with
+            {
+                FailurePolicy = failurePolicy
+            };
 
         return this;
     }

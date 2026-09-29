@@ -28,10 +28,9 @@ public interface IJobExecutionCoordinator
     /// Token used to cancel the execution.
     /// </param>
     /// <returns>
-    /// <c>true</c> when the job completes successfully under an active lease; otherwise, <c>false</c>
-    /// when the lease cannot be maintained or is not acquired.
+    /// The outcome of the execution attempt.
     /// </returns>
-    Task<bool> ExecuteAsync(
+    Task<ExecutionResult> ExecuteAsync(
         ActiveExecution execution,
         JobExecutionOptions options,
         Func<CancellationToken, Task> job,

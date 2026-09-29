@@ -4,7 +4,7 @@
 
 Define how `JobExecutionCoordinator` maps runtime execution events to `ExecutionResult`.
 
-This document prepares the migration from:
+This document records the migration from:
 
 ```csharp
 Task<bool>
@@ -16,9 +16,10 @@ to:
 Task<ExecutionResult>
 ```
 
-without introducing Failure Policies, Execution History, Job State evaluation or observability concerns.
+and its integration with job state and failure policy evaluation.
 
-The purpose of this document is to establish a deterministic mapping between runtime events and execution results before modifying the coordinator implementation.
+The coordinator classifies execution attempts. The hosted service applies the configured failure
+policy to the result and persists the resulting job state.
 
 ---
 
@@ -32,15 +33,13 @@ ExecutionResult represents the result of a single execution attempt.
 
 The coordinator is the primary runtime component responsible for determining execution outcomes.
 
-Future capabilities such as:
+Additional capabilities remain separate:
 
-- Failure Policy evaluation
-- Job State transitions
 - Execution History persistence
 - Metrics
 - OpenTelemetry
 
-shall consume ExecutionResult produced by the coordinator.
+These capabilities may consume `ExecutionResult` produced by the coordinator when implemented.
 
 ---
 
@@ -258,45 +257,24 @@ The coordinator does not create history records.
 
 ---
 
-## Future Evolution
+## Implemented Behavior
 
-This mapping is expected to remain stable when introducing:
+`IJobExecutionCoordinator.ExecuteAsync` returns `ExecutionResult` with these outcomes:
 
-- Failure Policy Engine
-- Job State Runtime
-- Execution History
-- Administrative Operations
-- Dashboard
-- OpenTelemetry
+- lease not acquired: `Skipped`
+- job completed: `Succeeded`
+- job threw an exception: `Failed`
+- host cancellation: `Cancelled`
+- heartbeat or lease release indicates ownership loss: `LeaseLost`
 
-Future runtime components shall consume ExecutionResult rather than reclassifying execution outcomes independently.
+The hosted service passes non-skipped outcomes to `IJobStateManager` with the job's configured
+`FailurePolicy`. `Skipped` does not change the current state because another owner may be executing
+the job.
 
----
+With `RequireManualReset`, `Failed` and `LeaseLost` block the job until `ResetAsync` succeeds.
+With `Ignore`, those outcomes leave the job eligible for its next execution attempt.
 
-## Next Step
+## Verification
 
-Introduce coordinator tests validating:
-
-```text
-CT170 Execute_Should_Return_Succeeded_Result
-
-CT171 Execute_Should_Return_Skipped_Result
-
-CT172 Execute_Should_Return_Failed_Result
-
-CT173 Execute_Should_Return_Cancelled_Result
-
-CT174 Execute_Should_Return_LeaseLost_Result
-```
-
-and only afterwards migrate:
-
-```csharp
-Task<bool>
-```
-
-to:
-
-```csharp
-Task<ExecutionResult>
-```
+Coordinator unit tests cover outcome mapping and lease cleanup. Core and PostgreSQL execution-state
+flow tests verify blocking after failure, skipping blocked jobs, and resuming after manual reset.

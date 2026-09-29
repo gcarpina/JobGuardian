@@ -877,12 +877,17 @@ This enables persistent coordination through PostgreSQL.
 Jobs are registered independently from provider configuration:
 
 ```csharp
+using JobGuardian.Abstractions.Enums;
+using JobGuardian.Abstractions.Models;
+using JobGuardian.Core.Models;
+
 services.AddJob<MyJob>(
     jobKey,
     new JobExecutionPolicy
     {
         LeaseDuration = TimeSpan.FromMinutes(1),
-        HeartbeatInterval = TimeSpan.FromSeconds(10)
+        HeartbeatInterval = TimeSpan.FromSeconds(10),
+        FailurePolicy = FailurePolicy.RequireManualReset
     });
 ```
 
@@ -901,6 +906,7 @@ services.AddJobGuardian();
 registers:
 
 ```text
+InMemoryLeaseStore
 InMemoryJobStateRepository
 ```
 
@@ -911,7 +917,7 @@ Characteristics:
 - ideal for development
 - ideal for automated testing
 
-The framework is fully functional without PostgreSQL.
+The framework is fully functional without PostgreSQL for single-process scenarios.
 
 ---
 
@@ -1109,7 +1115,7 @@ The current MVP includes:
 Current automated test coverage:
 
 ```text
-94 tests
+106 tests
 ```
 
 ---

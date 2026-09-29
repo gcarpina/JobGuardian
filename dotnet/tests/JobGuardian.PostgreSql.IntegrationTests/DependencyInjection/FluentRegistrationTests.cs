@@ -18,7 +18,7 @@ namespace JobGuardian.PostgreSql.IntegrationTests.DependencyInjection;
 public sealed class FluentRegistrationTests
 {
     [Fact]
-    public async Task UsePostgreSql_Should_Start_Host_With_Registered_Services()
+    public async Task CT1290_UsePostgreSql_Should_Start_Host_With_Registered_Services()
     {
         // Arrange
 

@@ -426,12 +426,6 @@ The domain model should not depend on storage.
 Planned future activities:
 
 ```text
-ExecutionResult
-
-Job State Model
-
-Failure Policy Engine
-
 Execution History
 
 Execution Metrics
