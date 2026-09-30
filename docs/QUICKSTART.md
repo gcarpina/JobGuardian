@@ -108,7 +108,12 @@ configured polling interval (30 seconds by default).
 For distributed execution across multiple application instances, enable the PostgreSQL provider.
 Reference the `JobGuardian.Core` and `JobGuardian.PostgreSql` packages. Apply the repository
 schema script to the target database before starting the application; the provider does not run
-migrations automatically. For example, against a new database:
+migrations automatically. The script is available in the repository at
+`sql/postgresql/V001_initial_schema.sql` and is included in the `JobGuardian.PostgreSql` package.
+NuGet stores it in the package cache; it does not copy the script into the application project or
+apply it automatically. See the [package consumer sample](../dotnet/samples/PackageConsumer/README.md)
+for the cache path and a `psql` example. Against a database and from the repository root, the
+repository copy can be applied with:
 
 ```sh
 psql "$DATABASE_URL" -f sql/postgresql/V001_initial_schema.sql
