@@ -43,7 +43,9 @@ jobs:
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Restore
         run: dotnet restore dotnet/JobGuardian.sln
@@ -74,16 +76,31 @@ jobs:
         run: |
           psql \
             -v ON_ERROR_STOP=1 \
-            -f artifacts/nuget-cache/jobguardian.postgresql/0.9.0-preview1/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql
+            -f "$(find artifacts/nuget-cache/jobguardian.postgresql \
+              -type f \
+              -path '*/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql' \
+              -print -quit)"
 
-      - name: Run package consumer sample
+      - name: Run package consumer sample (.NET 8)
         run: |
           dotnet run \
             --project dotnet/samples/PackageConsumer/JobGuardian.PackageConsumer.csproj \
+            --framework net8.0 \
+            --configuration Release \
+            --no-restore
+
+      - name: Run package consumer sample (.NET 10)
+        run: |
+          dotnet run \
+            --project dotnet/samples/PackageConsumer/JobGuardian.PackageConsumer.csproj \
+            --framework net10.0 \
             --configuration Release \
             --no-restore
 
       - name: Verify packaged PostgreSQL schema
         run: |
           cmp sql/postgresql/V001_initial_schema.sql \
-            artifacts/nuget-cache/jobguardian.postgresql/0.9.0-preview1/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql
+            "$(find artifacts/nuget-cache/jobguardian.postgresql \
+              -type f \
+              -path '*/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql' \
+              -print -quit)"

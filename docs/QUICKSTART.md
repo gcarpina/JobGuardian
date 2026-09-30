@@ -6,7 +6,7 @@ This guide shows how to create and run a job with JobGuardian in a few minutes.
 
 # Prerequisites
 
-- .NET 8
+- .NET 8 or .NET 10
 - Dependency Injection
 - Hosted Services
 

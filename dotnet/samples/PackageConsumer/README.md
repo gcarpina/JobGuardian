@@ -1,8 +1,9 @@
 # Package consumer sample
 
 This console application demonstrates restoring and using the NuGet package API for JobGuardian.
-It references the `0.9.0-preview1` packages and verifies that the PostgreSQL provider
-and a registered job can be resolved from dependency injection.
+It targets .NET 8 and .NET 10 and uses the package version declared in
+`dotnet/Directory.Build.props`. It verifies that the PostgreSQL provider and a registered job can
+be resolved from dependency injection.
 
 The packages are not required to be published to NuGet.org to run this sample. Build them into a
 local feed from the repository root:
@@ -37,20 +38,25 @@ project or apply it to a database. In this sample, the `--packages` option above
 under `artifacts/nuget-cache`, so the schema path is:
 
 ```text
-artifacts/nuget-cache/jobguardian.postgresql/0.9.0-preview1/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql
+artifacts/nuget-cache/jobguardian.postgresql/<package-version>/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql
 ```
 
 To apply it to a new database from the repository root, set `DATABASE_URL` to the intended
-PostgreSQL connection string and run:
+PostgreSQL connection string and locate the restored script by package version:
 
 ```sh
+SCHEMA_PATH=$(find artifacts/nuget-cache/jobguardian.postgresql \
+  -type f \
+  -path '*/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql' \
+  -print -quit)
+test -n "$SCHEMA_PATH"
 psql "$DATABASE_URL" \
-  -f artifacts/nuget-cache/jobguardian.postgresql/0.9.0-preview1/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql
+  -f "$SCHEMA_PATH"
 ```
 
 For a normal consumer restore, NuGet uses the global packages folder. Find its location with
 `dotnet nuget locals global-packages --list`; append
-`jobguardian.postgresql/0.9.0-preview1/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql`
+`jobguardian.postgresql/<package-version>/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql`
 to that folder. The default on Linux and macOS is `~/.nuget/packages`; on Windows it is
 `%USERPROFILE%\.nuget\packages`. A custom `NUGET_PACKAGES` setting or `globalPackagesFolder`
 configuration changes this location.
