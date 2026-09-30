@@ -27,8 +27,9 @@ deployment has been approved.
 - PostgreSQL is required for coordination and persistent blocked state across application instances
 - PostgreSQL schema provisioning is an operator responsibility; the provider does not apply migrations
 - The current failure policies are `Ignore` and `RequireManualReset`; automatic retry is not implemented
-- Execution history, audit behavior, metrics exporters, OpenTelemetry, dashboards and additional database providers are outside the MVP
-- The initial PostgreSQL schema also contains history and audit tables reserved for future work; their presence does not indicate runtime support
+- Minimal execution history is persisted by the PostgreSQL provider; listing/query APIs and automatic retention are not implemented
+- Audit behavior, metrics exporters, OpenTelemetry, dashboards and additional database providers are outside the MVP
+- The initial PostgreSQL schema also contains an audit table reserved for future work; its presence does not indicate runtime support
 
 ## Release Gate
 

@@ -7,6 +7,7 @@ using JobGuardian.Core.Models;
 using JobGuardian.Core.Options;
 using JobGuardian.Core.Tests.TestKit;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -31,6 +32,11 @@ internal sealed class HostedServiceBuilder
 
     private readonly IJobStateManager
         _stateManager;
+
+    private readonly IHostEnvironment
+        _hostEnvironment;
+
+    private IExecutionHistoryStore? _executionHistoryStore;
 
     private readonly List<JobDescriptor>
         _jobs = [];
@@ -77,6 +83,15 @@ internal sealed class HostedServiceBuilder
 
         _stateManager =
             Substitute.For<IJobStateManager>();
+
+        _hostEnvironment =
+            Substitute.For<IHostEnvironment>();
+
+        _hostEnvironment.ApplicationName
+            .Returns("JobGuardian.Tests");
+
+        _hostEnvironment.EnvironmentName
+            .Returns("Test");
 
         _stateManager
             .GetCurrentStateAsync(
@@ -169,6 +184,30 @@ internal sealed class HostedServiceBuilder
         return this;
     }
 
+    public HostedServiceBuilder WithExecutionHistoryStore(
+        IExecutionHistoryStore executionHistoryStore)
+    {
+        _executionHistoryStore =
+            executionHistoryStore;
+
+        return this;
+    }
+
+    public HostedServiceBuilder WithExecutionResult(
+        ExecutionResult executionResult)
+    {
+        _coordinator
+            .ExecuteAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<JobExecutionOptions>(),
+                Arg.Any<Func<CancellationToken, Task>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromResult(executionResult));
+
+        return this;
+    }
+
     public HostedServiceBuilder WithJobState(
         JobState state)
     {
@@ -192,7 +231,9 @@ internal sealed class HostedServiceBuilder
                 _stateManager,
                 _identityProvider,
                 _runtimeOptions,
-                _logger);
+                _logger,
+                _executionHistoryStore,
+                _hostEnvironment);
 
         return new HostedServiceContext
         {

@@ -168,16 +168,16 @@ COMMENT ON COLUMN jobguardian_execution_history.owner_id
 IS 'Execution owner using environment/application/instance format';
 
 COMMENT ON COLUMN jobguardian_execution_history.started_at_utc
-IS 'Database UTC timestamp when execution started';
+IS 'UTC timestamp when the execution attempt started';
 
 COMMENT ON COLUMN jobguardian_execution_history.ended_at_utc
-IS 'Database UTC timestamp when execution ended';
+IS 'UTC timestamp when the execution attempt ended';
 
 COMMENT ON COLUMN jobguardian_execution_history.outcome
-IS 'Success, Failed, Abandoned or Skipped';
+IS 'ExecutionOutcome value: Succeeded, Failed, Cancelled, LeaseLost or Skipped';
 
 COMMENT ON COLUMN jobguardian_execution_history.failure_category
-IS 'ApplicationError, LeaseLost, Timeout, InfrastructureFailure, ManualAbort or Unknown';
+IS 'ApplicationError, LeaseLost, Cancelled or InfrastructureFailure';
 
 COMMENT ON COLUMN jobguardian_execution_history.run_type
 IS 'Scheduled, Manual or Recovery';

@@ -4,6 +4,7 @@ using JobGuardian.Core.DependencyInjection;
 
 using JobGuardian.PostgreSql.Connection;
 using JobGuardian.PostgreSql.LeaseStore;
+using JobGuardian.PostgreSql.HistoryStore;
 using JobGuardian.PostgreSql.Options;
 using JobGuardian.PostgreSql.State;
 using JobGuardian.PostgreSql.DependencyInjection;
@@ -182,6 +183,43 @@ public sealed class FluentRegistrationTests
         Assert.Equal(
             "Host=localhost",
             options.Value.ConnectionString);
+    }
+
+    [Fact]
+    public void CT1275_UsePostgreSql_Should_Register_ExecutionHistoryStore()
+    {
+        var services =
+            new ServiceCollection();
+
+        services
+            .AddJobGuardian()
+            .UsePostgreSql("Host=localhost");
+
+        using var provider =
+            services.BuildServiceProvider();
+
+        var store =
+            provider.GetRequiredService<IExecutionHistoryStore>();
+
+        Assert.IsType<PostgreSqlExecutionHistoryStore>(store);
+    }
+
+    [Fact]
+    public void CT1276_ServiceCollection_UsePostgreSql_Should_Register_ExecutionHistoryStore()
+    {
+        var services =
+            new ServiceCollection();
+
+        services.UsePostgreSql(
+            _ => { });
+
+        using var provider =
+            services.BuildServiceProvider();
+
+        var store =
+            provider.GetRequiredService<IExecutionHistoryStore>();
+
+        Assert.IsType<PostgreSqlExecutionHistoryStore>(store);
     }
 
     [Fact]

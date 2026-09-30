@@ -71,7 +71,8 @@ public sealed class PostgreSqlFixture
                 """
                 TRUNCATE TABLE
                     jobguardian_active_executions,
-                    jobguardian_job_state;
+                    jobguardian_job_state,
+                    jobguardian_execution_history;
                 """,
                 connection);
 

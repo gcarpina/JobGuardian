@@ -119,9 +119,13 @@ repository copy can be applied with:
 psql "$DATABASE_URL" -f sql/postgresql/V001_initial_schema.sql
 ```
 
-The script also creates history and audit tables reserved for future work; the current runtime
-uses the lease and job-state tables only. Provide `connectionString` from application
-configuration rather than hard-coding credentials.
+The PostgreSQL provider also persists execution attempts in
+`jobguardian_execution_history`. Records include the attempt timestamps, `ExecutionOutcome`, and
+a failure category; exception messages are not stored. History writes are best-effort and do not
+replace the execution outcome. The initial implementation has no history query API or automatic
+retention, so define a retention policy for long-running deployments. The audit table remains
+reserved for future work. Provide `connectionString` from application configuration rather than
+hard-coding credentials.
 
 ```csharp
 using JobGuardian.Core.DependencyInjection;

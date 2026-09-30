@@ -187,7 +187,7 @@ Lease ownership loss is an infrastructure-level event rather than an application
 
 ### Skipped
 
-Represents an execution attempt that never started.
+Represents an attempt that did not start the job callback.
 
 Conditions:
 
@@ -236,7 +236,10 @@ The Job State Model and ExecutionOutcome serve different purposes:
 
 ExecutionOutcome remains focused exclusively on describing how a specific execution attempt terminated.
 
-Failure Policies, Execution History, administrative operations and dashboard views may consume `ExecutionOutcome` values, but are not represented by `ExecutionOutcome` itself. The current runtime implements failure-policy evaluation and job-state updates; execution history and dashboard capabilities remain outside the MVP.
+Failure Policies, Execution History, administrative operations and dashboard views may consume
+`ExecutionOutcome` values, but are not represented by `ExecutionOutcome` itself. The current
+runtime implements failure-policy evaluation, job-state updates, and a minimal PostgreSQL-backed
+execution history. Dashboard capabilities remain outside the MVP.
 
 ---
 
@@ -289,7 +292,7 @@ Failure Policies evaluate outcomes and determine the supported subsequent runtim
 
 ## Execution History Integration
 
-Future execution history records shall persist outcomes using `ExecutionOutcome`.
+Execution history records persist outcomes using `ExecutionOutcome`.
 
 Example:
 
@@ -305,9 +308,31 @@ History persistence shall not introduce additional outcome categories.
 
 `ExecutionOutcome` remains the single source of truth.
 
-ExecutionHistory is responsible for persisting execution attempts over time.
+`ExecutionHistory` is responsible for persisting execution attempts over time.
 
 ExecutionOutcome classifies a single execution attempt and does not define how historical records are stored, retained, or queried.
+
+The initial .NET implementation has the following boundaries:
+
+- The hosted runtime creates a history record before lease acquisition and updates it after the
+  attempt completes
+- `StartedAtUtc` marks the start of the coordination attempt; a `Skipped` outcome means the job
+  callback did not run because the lease was unavailable
+- An incomplete record indicates that the process stopped or the final update failed before an
+  outcome was persisted
+- PostgreSQL persistence is enabled by the PostgreSQL provider; runtimes without an
+  `IExecutionHistoryStore` log that history is disabled
+- History write failures are logged but do not replace the job outcome or prevent execution
+- The runtime stores failure categories but does not persist exception messages, which may contain
+  sensitive data
+- Correlation and conversation identifiers remain unset until the runtime has a propagation
+  contract for them
+- Timestamps are UTC values from the runtime host; clock skew can affect ordering across hosts
+- The initial API reads an execution by ID; list/query APIs and retention automation are not yet
+  included
+
+The PostgreSQL history table grows until an operator applies a retention policy. Deployments that
+enable history must account for storage growth and define retention before sustained production use.
 
 ---
 
@@ -390,7 +415,7 @@ The domain model should not depend on storage.
 - Consistent failure classification
 - Simplified observability
 - Foundation for Failure Policies
-- Foundation for Execution History
+- Execution History classification and persistence
 - Reduced ambiguity across runtime components
 
 ### Negative
@@ -415,8 +440,6 @@ Job State integration
 Deferred beyond the MVP:
 
 ```text
-Execution History
-
 Execution Metrics
 
 OpenTelemetry Integration
