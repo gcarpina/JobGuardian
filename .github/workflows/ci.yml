@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build-and-test:
-    name: Build, test, and package consumer (.NET 8 and .NET 10)
+    name: Build and test (.NET 8)
     runs-on: ubuntu-latest
     services:
       postgres:
