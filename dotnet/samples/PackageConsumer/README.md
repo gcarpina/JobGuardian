@@ -17,10 +17,18 @@ dotnet run --project dotnet/samples/PackageConsumer/JobGuardian.PackageConsumer.
   --configuration Release --no-restore
 ```
 
-The sample does not start the hosted service or connect to PostgreSQL. It validates package restore,
-compilation, transitive dependencies, and dependency-injection registrations. The connection string
-is a placeholder because no database connection is opened. CI runs these package-consumption checks
-and verifies that the restored schema matches the SQL file in the repository.
+Without `JOBGUARDIAN_POSTGRESQL_CONNECTION_STRING`, the sample validates package restore,
+compilation, transitive dependencies, and dependency-injection registrations without connecting to
+PostgreSQL. When that environment variable is set, it also verifies lease acquisition, lookup,
+renewal, release, and persisted job state against the configured database. This writes a lease and
+job-state data, so use a disposable database. CI runs this flow against a disposable PostgreSQL
+service after applying the schema restored from the package. To run the database checks locally,
+apply the schema as described below, set the variable to an Npgsql connection string, then run:
+
+```sh
+dotnet run --project dotnet/samples/PackageConsumer/JobGuardian.PackageConsumer.csproj \
+  --configuration Release --no-restore
+```
 
 ## Applying the PostgreSQL schema
 
