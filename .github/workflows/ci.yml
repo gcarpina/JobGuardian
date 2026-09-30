@@ -15,6 +15,21 @@ jobs:
   build-and-test:
     name: Build and test (.NET 8)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: jobguardian
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d jobguardian"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      JOBGUARDIAN_POSTGRESQL_CONNECTION_STRING: "Host=localhost;Port=5432;Database=jobguardian;Username=postgres;Password=postgres"
 
     steps:
       - name: Check out repository
@@ -44,6 +59,17 @@ jobs:
             --source ./artifacts/packages \
             --source https://api.nuget.org/v3/index.json \
             --packages ./artifacts/nuget-cache
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Apply packaged PostgreSQL schema
+        run: |
+          psql "$JOBGUARDIAN_POSTGRESQL_CONNECTION_STRING" \
+            -v ON_ERROR_STOP=1 \
+            -f artifacts/nuget-cache/jobguardian.postgresql/0.9.0-preview1/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql
 
       - name: Run package consumer sample
         run: |
