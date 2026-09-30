@@ -11,6 +11,14 @@
     <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="../../../sql/postgresql/V001_initial_schema.sql"
+          Pack="true"
+          PackagePath="contentFiles/any/any/sql/postgresql/V001_initial_schema.sql"
+          BuildAction="None"
+          PackageCopyToOutput="false" />
+  </ItemGroup>
+
   <PropertyGroup>
     <PackageId>JobGuardian.PostgreSql</PackageId>
 
