@@ -98,9 +98,8 @@ Maintain Heartbeat
 Release Lease
 ```
 
-No additional code is required.
-
-JobGuardian automatically starts its hosted service.
+JobGuardian automatically starts its hosted service, which checks registered jobs at the
+configured polling interval (30 seconds by default).
 
 ---
 
