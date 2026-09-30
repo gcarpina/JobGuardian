@@ -30,6 +30,11 @@ jobs:
           --health-retries 5
     env:
       JOBGUARDIAN_POSTGRESQL_CONNECTION_STRING: "Host=localhost;Port=5432;Database=jobguardian;Username=postgres;Password=postgres"
+      PGHOST: localhost
+      PGPORT: 5432
+      PGDATABASE: jobguardian
+      PGUSER: postgres
+      PGPASSWORD: postgres
 
     steps:
       - name: Check out repository
@@ -67,7 +72,7 @@ jobs:
 
       - name: Apply packaged PostgreSQL schema
         run: |
-          psql "$JOBGUARDIAN_POSTGRESQL_CONNECTION_STRING" \
+          psql \
             -v ON_ERROR_STOP=1 \
             -f artifacts/nuget-cache/jobguardian.postgresql/0.9.0-preview1/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql
 
