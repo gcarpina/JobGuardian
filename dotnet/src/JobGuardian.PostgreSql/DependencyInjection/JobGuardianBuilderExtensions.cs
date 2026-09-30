@@ -4,6 +4,7 @@ using JobGuardian.Core.DependencyInjection;
 
 using JobGuardian.PostgreSql.Connection;
 using JobGuardian.PostgreSql.Contracts;
+using JobGuardian.PostgreSql.HistoryStore;
 using JobGuardian.PostgreSql.LeaseStore;
 using JobGuardian.PostgreSql.Options;
 using JobGuardian.PostgreSql.State;
@@ -83,6 +84,10 @@ public static class JobGuardianBuilderExtensions
         builder.Services.AddSingleton<
             IJobStateRepository,
             PostgreSqlJobStateRepository>();
+
+        builder.Services.AddSingleton<
+            IExecutionHistoryStore,
+            PostgreSqlExecutionHistoryStore>();
 
         return builder;
     }

@@ -24,8 +24,8 @@
 
     <Description>
       PostgreSQL persistence provider for JobGuardian.
-      Provides lease storage, ownership coordination and distributed state management for
-      JobGuardian runtimes using PostgreSQL.
+      Provides lease storage, execution history and distributed state management for JobGuardian
+      runtimes using PostgreSQL.
     </Description>
 
   </PropertyGroup>

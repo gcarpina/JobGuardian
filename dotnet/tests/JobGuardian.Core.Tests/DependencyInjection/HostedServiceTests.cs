@@ -30,6 +30,20 @@ public sealed class HostedServiceTests
         return provider;
     }
 
+    private static IHostEnvironment CreateHostEnvironment()
+    {
+        var environment =
+            Substitute.For<IHostEnvironment>();
+
+        environment.ApplicationName
+            .Returns("JobGuardian.Tests");
+
+        environment.EnvironmentName
+            .Returns("Test");
+
+        return environment;
+    }
+
     [Fact]
     public void CT240_HostedService_Should_Create_Scope_For_Registered_Jobs()
     {
@@ -74,7 +88,9 @@ public sealed class HostedServiceTests
                 Substitute.For<IJobStateManager>(),
                 CreateIdentityProvider(),
                 TestDefaults.DefaultRuntimeOptions,
-                logger);
+                logger,
+                null,
+                CreateHostEnvironment());
 
         // Act
 
@@ -145,7 +161,9 @@ public sealed class HostedServiceTests
                 Substitute.For<IJobStateManager>(),
                 CreateIdentityProvider(),
                 TestDefaults.DefaultRuntimeOptions,
-                logger);
+                logger,
+                null,
+                CreateHostEnvironment());
 
         // Act
 
@@ -173,6 +191,74 @@ public sealed class HostedServiceTests
 
         await context.HostedService.ExecuteJobsAsync(
             CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task CT280_HostedService_Should_Persist_Execution_History()
+    {
+        var historyStore =
+            Substitute.For<IExecutionHistoryStore>();
+
+        var context =
+            new HostedServiceBuilder()
+                .AddJob<DummyJob>()
+                .WithExecutionHistoryStore(historyStore)
+                .Build();
+
+        await context.HostedService.ExecuteJobsAsync(
+            CancellationToken.None);
+
+        await historyStore.Received(1).CreateAsync(
+            Arg.Is<ExecutionHistoryEntry>(
+                entry =>
+                    entry.JobKey.JobName == nameof(DummyJob)
+                    && entry.Outcome == null
+                    && entry.EndedAtUtc == null),
+            Arg.Any<CancellationToken>());
+
+        await historyStore.Received(1).UpdateAsync(
+            Arg.Is<ExecutionHistoryEntry>(
+                entry =>
+                    entry.JobKey.JobName == nameof(DummyJob)
+                    && entry.Outcome == ExecutionOutcome.Succeeded
+                    && entry.EndedAtUtc != null
+                    && entry.FailureCategory == null
+                    && entry.ErrorMessage == null),
+            CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task CT290_HostedService_Should_Continue_When_History_Cannot_Be_Created()
+    {
+        var historyStore =
+            Substitute.For<IExecutionHistoryStore>();
+
+        historyStore
+            .CreateAsync(
+                Arg.Any<ExecutionHistoryEntry>(),
+                Arg.Any<CancellationToken>())
+            .Returns<Task>(
+                _ => throw new InvalidOperationException(
+                    "History storage unavailable"));
+
+        var context =
+            new HostedServiceBuilder()
+                .AddJob<DummyJob>()
+                .WithExecutionHistoryStore(historyStore)
+                .Build();
+
+        await context.HostedService.ExecuteJobsAsync(
+            CancellationToken.None);
+
+        await context.Coordinator.Received(1).ExecuteAsync(
+            Arg.Any<ActiveExecution>(),
+            Arg.Any<JobExecutionOptions>(),
+            Arg.Any<Func<CancellationToken, Task>>(),
+            Arg.Any<CancellationToken>());
+
+        await historyStore.DidNotReceive().UpdateAsync(
+            Arg.Any<ExecutionHistoryEntry>(),
+            Arg.Any<CancellationToken>());
 
         // Assert
 
@@ -183,6 +269,38 @@ public sealed class HostedServiceTests
                 Arg.Any<JobExecutionOptions>(),
                 Arg.Any<Func<CancellationToken, Task>>(),
                 Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(ExecutionOutcome.Succeeded, null)]
+    [InlineData(ExecutionOutcome.Failed, "ApplicationError")]
+    [InlineData(ExecutionOutcome.Cancelled, "Cancelled")]
+    [InlineData(ExecutionOutcome.LeaseLost, "LeaseLost")]
+    [InlineData(ExecutionOutcome.Skipped, null)]
+    public async Task CT295_HostedService_Should_Persist_Outcome_Classification(
+        ExecutionOutcome outcome,
+        string? failureCategory)
+    {
+        var historyStore =
+                Substitute.For<IExecutionHistoryStore>();
+
+        var context =
+                new HostedServiceBuilder()
+                    .AddJob<DummyJob>()
+                    .WithExecutionHistoryStore(historyStore)
+                    .WithExecutionResult(
+                        new ExecutionResult(outcome))
+                    .Build();
+
+        await context.HostedService.ExecuteJobsAsync(
+                CancellationToken.None);
+
+        await historyStore.Received(1).UpdateAsync(
+                Arg.Is<ExecutionHistoryEntry>(
+                    entry =>
+                        entry.Outcome == outcome
+                        && entry.FailureCategory == failureCategory),
+                CancellationToken.None);
     }
 
     [Fact]

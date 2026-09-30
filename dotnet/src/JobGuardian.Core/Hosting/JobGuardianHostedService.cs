@@ -1,6 +1,7 @@
 using JobGuardian.Abstractions.Contracts;
 using JobGuardian.Abstractions.Enums;
 using JobGuardian.Abstractions.Models;
+using JobGuardian.Abstractions;
 using JobGuardian.Core.Execution;
 using JobGuardian.Core.Models;
 using JobGuardian.Core.Options;
@@ -24,6 +25,10 @@ internal sealed class JobGuardianHostedService
 
     private readonly IExecutionIdentityProvider _identityProvider;
 
+    private readonly IExecutionHistoryStore? _executionHistoryStore;
+
+    private readonly IHostEnvironment? _hostEnvironment;
+
     public IEnumerable<JobDescriptor> Jobs
     {
         get;
@@ -39,7 +44,9 @@ internal sealed class JobGuardianHostedService
         IJobStateManager stateManager,
         IExecutionIdentityProvider identityProvider,
         RuntimeOptions options,
-        ILogger<JobGuardianHostedService> logger)
+        ILogger<JobGuardianHostedService> logger,
+        IExecutionHistoryStore? executionHistoryStore = null,
+        IHostEnvironment? hostEnvironment = null)
     {
         Jobs = jobs;
         _scopeFactory = scopeFactory;
@@ -48,6 +55,8 @@ internal sealed class JobGuardianHostedService
         _identityProvider = identityProvider;
         _options = options;
         _logger = logger;
+        _executionHistoryStore = executionHistoryStore;
+        _hostEnvironment = hostEnvironment;
     }
 
     protected override async Task ExecuteAsync(
@@ -55,6 +64,18 @@ internal sealed class JobGuardianHostedService
     {
         _logger.LogInformation(
             "JobGuardian hosted service started");
+
+        if (_executionHistoryStore is null)
+        {
+            _logger.LogWarning(
+                "Execution history is disabled because no {ExecutionHistoryStore} is registered",
+                nameof(IExecutionHistoryStore));
+        }
+        else if (_hostEnvironment is null)
+        {
+            _logger.LogWarning(
+                "Host environment is unavailable; execution history will use fallback application metadata");
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -126,14 +147,35 @@ internal sealed class JobGuardianHostedService
                 continue;
             }
 
+            var execution =
+                CreateExecution(descriptor);
+
+            var historyEntry =
+                CreateHistoryEntry(
+                    descriptor,
+                    execution,
+                    DateTimeOffset.UtcNow);
+
+            var historyCreated =
+                await TryCreateHistoryAsync(
+                    historyEntry,
+                    cancellationToken);
+
             try
             {
                 var executionResult =
                     await _coordinator.ExecuteAsync(
-                        CreateExecution(descriptor),
+                        execution,
                         CreateOptions(descriptor),
                         job.ExecuteAsync,
                         cancellationToken);
+
+                await TryCompleteHistoryAsync(
+                    historyEntry,
+                    historyCreated,
+                    executionResult.Outcome,
+                    GetFailureCategory(
+                        executionResult.Outcome));
 
                 try
                 {
@@ -177,6 +219,12 @@ internal sealed class JobGuardianHostedService
             }
             catch (Exception ex)
             {
+                await TryCompleteHistoryAsync(
+                    historyEntry,
+                    historyCreated,
+                    ExecutionOutcome.Failed,
+                    "InfrastructureFailure");
+
                 _logger.LogError(
                     ex,
                     "Job {JobKey} execution coordination failed",
@@ -206,6 +254,136 @@ internal sealed class JobGuardianHostedService
 
             HeartbeatInterval =
                 descriptor.Policy.HeartbeatInterval
+        };
+    }
+
+    private ExecutionHistoryEntry CreateHistoryEntry(
+        JobDescriptor descriptor,
+        ActiveExecution execution,
+        DateTimeOffset startedAtUtc)
+    {
+        return new ExecutionHistoryEntry
+        {
+            ExecutionId = execution.ExecutionId,
+            JobKey = descriptor.JobKey,
+            ProtocolVersion = ProtocolVersions.ProtocolVersion,
+            SchemaVersion = ProtocolVersions.SchemaVersion,
+            ApplicationName =
+                GetApplicationName(),
+            ApplicationVersion =
+                System.Reflection.Assembly
+                    .GetEntryAssembly()
+                    ?.GetName()
+                    .Version
+                    ?.ToString(),
+            Environment =
+                GetEnvironmentName(),
+            OwnerId = execution.OwnerId,
+            StartedAtUtc = startedAtUtc,
+            RunType = RunType.Scheduled,
+            TriggeredBy = TriggeredBy.Scheduler
+        };
+    }
+
+    private string GetApplicationName()
+    {
+        if (!string.IsNullOrWhiteSpace(
+            _hostEnvironment?.ApplicationName))
+        {
+            return _hostEnvironment.ApplicationName;
+        }
+
+        return System.Reflection.Assembly
+            .GetEntryAssembly()
+            ?.GetName()
+            .Name
+            ?? AppDomain.CurrentDomain.FriendlyName;
+    }
+
+    private string GetEnvironmentName()
+    {
+        if (!string.IsNullOrWhiteSpace(
+            _hostEnvironment?.EnvironmentName))
+        {
+            return _hostEnvironment.EnvironmentName;
+        }
+
+        return Environment.GetEnvironmentVariable(
+                "DOTNET_ENVIRONMENT")
+            ?? Environment.GetEnvironmentVariable(
+                "ASPNETCORE_ENVIRONMENT")
+            ?? "Unknown";
+    }
+
+    private async Task<bool> TryCreateHistoryAsync(
+        ExecutionHistoryEntry entry,
+        CancellationToken cancellationToken)
+    {
+        if (_executionHistoryStore is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            await _executionHistoryStore.CreateAsync(
+                entry,
+                cancellationToken);
+
+            return true;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Failed to create execution history for {ExecutionId}",
+                entry.ExecutionId);
+
+            return false;
+        }
+    }
+
+    private async Task TryCompleteHistoryAsync(
+        ExecutionHistoryEntry entry,
+        bool historyCreated,
+        ExecutionOutcome outcome,
+        string? failureCategory)
+    {
+        if (_executionHistoryStore is null || !historyCreated)
+        {
+            return;
+        }
+
+        try
+        {
+            await _executionHistoryStore.UpdateAsync(
+                entry with
+                {
+                    EndedAtUtc = DateTimeOffset.UtcNow,
+                    Outcome = outcome,
+                    FailureCategory = failureCategory
+                },
+                CancellationToken.None);
+        }
+        catch (Exception historyException)
+        {
+            _logger.LogError(
+                historyException,
+                "Failed to complete execution history for {ExecutionId} with outcome {Outcome}",
+                entry.ExecutionId,
+                outcome);
+        }
+    }
+
+    private static string? GetFailureCategory(
+        ExecutionOutcome outcome)
+    {
+        return outcome switch
+        {
+            ExecutionOutcome.Failed => "ApplicationError",
+            ExecutionOutcome.LeaseLost => "LeaseLost",
+            ExecutionOutcome.Cancelled => "Cancelled",
+            _ => null
         };
     }
 

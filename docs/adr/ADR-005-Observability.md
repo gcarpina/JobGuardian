@@ -150,7 +150,9 @@ conversation_id
 
 These identifiers should be propagated whenever possible.
 
-Execution history records should persist both values.
+Execution history records should persist both values when they are available to the runtime.
+The initial .NET hosted runtime leaves them unset until a correlation propagation contract is
+introduced.
 
 ---
 
