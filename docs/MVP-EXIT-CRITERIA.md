@@ -22,7 +22,7 @@ deployment has been approved.
 ## Supported Scope and Boundaries
 
 - JobGuardian coordinates execution; it does not schedule jobs
-- The current implementation targets .NET 8; other language SDKs are not part of this MVP
+- The current implementation targets .NET 8 and .NET 10; other language SDKs are not part of this MVP
 - The in-memory provider coordinates only within one process and loses lease and state data when the process exits
 - PostgreSQL is required for coordination and persistent blocked state across application instances
 - PostgreSQL schema provisioning is an operator responsibility; the provider does not apply migrations
