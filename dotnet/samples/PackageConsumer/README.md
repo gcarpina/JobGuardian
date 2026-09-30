@@ -19,7 +19,8 @@ dotnet run --project dotnet/samples/PackageConsumer/JobGuardian.PackageConsumer.
 
 The sample does not start the hosted service or connect to PostgreSQL. It validates package restore,
 compilation, transitive dependencies, and dependency-injection registrations. The connection string
-is a placeholder because no database connection is opened.
+is a placeholder because no database connection is opened. CI runs these package-consumption checks
+and verifies that the restored schema matches the SQL file in the repository.
 
 ## Applying the PostgreSQL schema
 

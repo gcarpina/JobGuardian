@@ -30,3 +30,29 @@ jobs:
 
       - name: Build and test
         run: dotnet test dotnet/JobGuardian.sln --no-restore --configuration Release
+
+      - name: Pack local NuGet packages
+        run: |
+          dotnet pack dotnet/JobGuardian.sln \
+            --no-restore \
+            --configuration Release \
+            --output ./artifacts/packages
+
+      - name: Restore package consumer sample
+        run: |
+          dotnet restore dotnet/samples/PackageConsumer/JobGuardian.PackageConsumer.csproj \
+            --source ./artifacts/packages \
+            --source https://api.nuget.org/v3/index.json \
+            --packages ./artifacts/nuget-cache
+
+      - name: Run package consumer sample
+        run: |
+          dotnet run \
+            --project dotnet/samples/PackageConsumer/JobGuardian.PackageConsumer.csproj \
+            --configuration Release \
+            --no-restore
+
+      - name: Verify packaged PostgreSQL schema
+        run: |
+          cmp sql/postgresql/V001_initial_schema.sql \
+            artifacts/nuget-cache/jobguardian.postgresql/0.9.0-preview1/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql
