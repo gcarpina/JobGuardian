@@ -3,6 +3,8 @@ using JobGuardian.Abstractions.Models;
 using JobGuardian.Core.Execution;
 using JobGuardian.Core.Models;
 using JobGuardian.Core.Tests.Infrastructure;
+using JobGuardian.Core.Tests.TestKit;
+using Microsoft.Extensions.Logging;
 
 using NSubstitute;
 
@@ -210,5 +212,90 @@ public sealed class LeaseHeartbeatServiceTests
                 heartbeat.RunAsync(
                     execution,
                     options));
+    }
+
+    [Fact]
+    public async Task CT133_RunAsync_Should_Log_Successful_Renewal_At_Trace_Level()
+    {
+        var leaseStore =
+            CreateLeaseStore();
+        var execution =
+            TestData.CreateExecution("owner-a");
+        var logger =
+            new TestLogger<LeaseHeartbeatService>();
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+
+        leaseStore
+            .RenewAsync(
+                Arg.Any<JobKey>(),
+                Arg.Any<Guid>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(
+                _ =>
+                {
+                    cancellationTokenSource.Cancel();
+                    return Task.FromResult(true);
+                });
+
+        var heartbeat =
+            new LeaseHeartbeatService(
+                leaseStore,
+                logger);
+
+        var result =
+            await heartbeat.RunAsync(
+                execution,
+                TestData.CreateOptions(),
+                cancellationTokenSource.Token);
+
+        Assert.True(result);
+        Assert.Contains(
+            logger.Entries,
+            entry =>
+                entry.Level == LogLevel.Trace
+                && entry.Message.Contains(
+                    execution.JobKey.JobName,
+                    StringComparison.Ordinal)
+                && entry.Message.Contains(
+                    execution.ExecutionId.ToString(),
+                    StringComparison.Ordinal)
+                && entry.Message.Contains(
+                    "ms",
+                    StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CT134_RunAsync_Should_Not_Log_Unsuccessful_Renewal_At_Trace_Level()
+    {
+        var leaseStore =
+            CreateLeaseStore();
+        var logger =
+            new TestLogger<LeaseHeartbeatService>();
+
+        leaseStore
+            .RenewAsync(
+                Arg.Any<JobKey>(),
+                Arg.Any<Guid>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var heartbeat =
+            new LeaseHeartbeatService(
+                leaseStore,
+                logger);
+
+        var result =
+            await heartbeat.RunAsync(
+                TestData.CreateExecution("owner-a"),
+                TestData.CreateOptions());
+
+        Assert.False(result);
+        Assert.DoesNotContain(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Trace);
     }
 }

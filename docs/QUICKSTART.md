@@ -210,6 +210,16 @@ For production, configure service identity, endpoint security, sampling, retenti
 and alerting in the application/collector environment. Do not put tenant or execution identifiers
 into metric labels; use traces for sampled diagnosis and execution history for persisted outcomes.
 
+JobGuardian uses the host's standard `ILogger` pipeline for runtime logs. Successful and skipped
+attempts are logged at `Debug`; failures at `Error`, lease loss at `Warning`, and cooperative
+cancellation at `Information`. Successful heartbeat renewals are logged at `Trace` only, so they
+can be enabled temporarily for diagnostics without adding routine log volume. Configure providers
+and levels in the hosting application; job keys and execution IDs appear in execution logs for
+correlation. Terminal outcome logs include `DurationMilliseconds` for the coordinator attempt,
+covering lease acquisition, job execution, heartbeat monitoring, and lease release; skipped
+attempts report the duration of their lease-acquisition attempt. Apply the application's normal
+log access and retention controls.
+
 ---
 
 # Failure Policies

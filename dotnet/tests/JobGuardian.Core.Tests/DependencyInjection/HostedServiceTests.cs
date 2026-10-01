@@ -658,6 +658,137 @@ public sealed class HostedServiceTests
         Assert.Contains(
             LogLevel.Error,
             logger.Levels);
+        Assert.Contains(
+            logger.Entries,
+            entry =>
+                entry.Level == LogLevel.Error
+                && entry.Message.Contains(
+                    "coordination failed",
+                    StringComparison.Ordinal)
+                && entry.Message.Contains(
+                    "execution ID",
+                    StringComparison.Ordinal)
+                && System.Text.RegularExpressions.Regex.IsMatch(
+                    entry.Message,
+                    @"after [\d.,]+ ms")
+                && entry.Exception is InvalidOperationException);
+    }
+
+    [Theory]
+    [InlineData(
+        ExecutionOutcome.Failed,
+        LogLevel.Error,
+        "execution failed")]
+    [InlineData(
+        ExecutionOutcome.LeaseLost,
+        LogLevel.Warning,
+        "lease ownership was lost")]
+    [InlineData(
+        ExecutionOutcome.Cancelled,
+        LogLevel.Information,
+        "execution was cancelled")]
+    public async Task CT371_HostedService_Should_Log_Execution_Outcome_With_Execution_Id(
+        ExecutionOutcome outcome,
+        LogLevel expectedLevel,
+        string expectedMessage)
+    {
+        var logger =
+            new TestLogger<JobGuardianHostedService>();
+        var exception =
+            outcome is ExecutionOutcome.Failed or ExecutionOutcome.LeaseLost
+                ? new InvalidOperationException("Execution test failure")
+                : null;
+
+        var context =
+            new HostedServiceBuilder()
+                .AddJob<DummyJob>()
+                .WithLogger(logger)
+                .WithExecutionResult(
+                    new ExecutionResult(
+                        outcome,
+                        exception))
+                .Build();
+
+        await context.HostedService.ExecuteJobsAsync(
+            CancellationToken.None);
+
+        Assert.Contains(
+            logger.Entries,
+            entry =>
+                entry.Level == expectedLevel
+                && entry.Message.Contains(
+                    expectedMessage,
+                    StringComparison.Ordinal)
+                && entry.Message.Contains(
+                    "execution ID",
+                    StringComparison.Ordinal)
+                && System.Text.RegularExpressions.Regex.IsMatch(
+                    entry.Message,
+                    @"(?:in|after) [\d.,]+ ms")
+                && entry.Exception == exception);
+    }
+
+    [Fact]
+    public async Task CT375_HostedService_Should_Log_Successful_Executions_At_Debug_Level()
+    {
+        var logger =
+            new TestLogger<JobGuardianHostedService>();
+
+        var context =
+            new HostedServiceBuilder()
+                .AddJob<DummyJob>()
+                .WithLogger(logger)
+                .Build();
+
+        await context.HostedService.ExecuteJobsAsync(
+            CancellationToken.None);
+
+        Assert.Contains(
+            logger.Entries,
+            entry =>
+                entry.Level == LogLevel.Debug
+                && entry.Message.Contains(
+                    "completed successfully",
+                    StringComparison.Ordinal)
+                && entry.Message.Contains(
+                    "execution ID",
+                    StringComparison.Ordinal)
+                && System.Text.RegularExpressions.Regex.IsMatch(
+                    entry.Message,
+                    @"in [\d.,]+ ms"));
+    }
+
+    [Fact]
+    public async Task CT376_HostedService_Should_Log_Skipped_Executions_At_Debug_Level()
+    {
+        var logger =
+            new TestLogger<JobGuardianHostedService>();
+
+        var context =
+            new HostedServiceBuilder()
+                .AddJob<DummyJob>()
+                .WithLogger(logger)
+                .WithExecutionResult(
+                    new ExecutionResult(
+                        ExecutionOutcome.Skipped))
+                .Build();
+
+        await context.HostedService.ExecuteJobsAsync(
+            CancellationToken.None);
+
+        Assert.Contains(
+            logger.Entries,
+            entry =>
+                entry.Level == LogLevel.Debug
+                && entry.Message.Contains(
+                    "lease was not acquired",
+                    StringComparison.Ordinal)
+                && entry.Message.Contains(
+                    "execution ID",
+                    StringComparison.Ordinal)
+                && System.Text.RegularExpressions.Regex.IsMatch(
+                    entry.Message,
+                    @"after [\d.,]+ ms"));
     }
 
     [Fact]
@@ -729,9 +860,13 @@ public sealed class HostedServiceTests
     {
         // Arrange
 
+        var logger =
+            new TestLogger<JobGuardianHostedService>();
+
         var context =
             new HostedServiceBuilder()
                 .AddJob<DummyJob>()
+                .WithLogger(logger)
                 .WithJobState(
                     JobState.Blocked)
                 .Build();
@@ -750,6 +885,14 @@ public sealed class HostedServiceTests
                 Arg.Any<JobExecutionOptions>(),
                 Arg.Any<Func<CancellationToken, Task>>(),
                 Arg.Any<CancellationToken>());
+
+        Assert.Contains(
+            logger.Entries,
+            entry =>
+                entry.Level == LogLevel.Information
+                && entry.Message.Contains(
+                    "job is blocked",
+                    StringComparison.Ordinal));
     }
 
     [Fact]

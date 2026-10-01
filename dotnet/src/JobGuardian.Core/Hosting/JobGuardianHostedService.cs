@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using JobGuardian.Abstractions.Contracts;
 using JobGuardian.Abstractions.Enums;
 using JobGuardian.Abstractions.Models;
@@ -161,6 +162,9 @@ internal sealed class JobGuardianHostedService
                     historyEntry,
                     cancellationToken);
 
+            var executionStartedAt =
+                Stopwatch.GetTimestamp();
+
             try
             {
                 var executionResult =
@@ -169,6 +173,10 @@ internal sealed class JobGuardianHostedService
                         CreateOptions(descriptor),
                         job.ExecuteAsync,
                         cancellationToken);
+
+                var executionDurationMilliseconds =
+                    Stopwatch.GetElapsedTime(
+                        executionStartedAt).TotalMilliseconds;
 
                 await TryCompleteHistoryAsync(
                     historyEntry,
@@ -196,29 +204,55 @@ internal sealed class JobGuardianHostedService
 
                 switch (executionResult.Outcome)
                 {
+                    case ExecutionOutcome.Succeeded:
+                        _logger.LogDebug(
+                            "Job {JobKey} execution completed successfully in {DurationMilliseconds} ms (execution ID {ExecutionId})",
+                            descriptor.JobKey,
+                            executionDurationMilliseconds,
+                            execution.ExecutionId);
+                        break;
+
+                    case ExecutionOutcome.Skipped:
+                        _logger.LogDebug(
+                            "Job {JobKey} execution skipped because the lease was not acquired after {DurationMilliseconds} ms (execution ID {ExecutionId})",
+                            descriptor.JobKey,
+                            executionDurationMilliseconds,
+                            execution.ExecutionId);
+                        break;
+
                     case ExecutionOutcome.Failed:
                         _logger.LogError(
                             executionResult.Exception,
-                            "Job {JobKey} execution failed",
-                            descriptor.JobKey);
+                            "Job {JobKey} execution failed after {DurationMilliseconds} ms (execution ID {ExecutionId})",
+                            descriptor.JobKey,
+                            executionDurationMilliseconds,
+                            execution.ExecutionId);
                         break;
 
                     case ExecutionOutcome.LeaseLost:
                         _logger.LogWarning(
                             executionResult.Exception,
-                            "Job {JobKey} execution stopped after lease ownership was lost",
-                            descriptor.JobKey);
+                            "Job {JobKey} execution stopped because lease ownership was lost after {DurationMilliseconds} ms (execution ID {ExecutionId})",
+                            descriptor.JobKey,
+                            executionDurationMilliseconds,
+                            execution.ExecutionId);
                         break;
 
                     case ExecutionOutcome.Cancelled:
                         _logger.LogInformation(
-                            "Job {JobKey} execution was cancelled",
-                            descriptor.JobKey);
+                            "Job {JobKey} execution was cancelled after {DurationMilliseconds} ms (execution ID {ExecutionId})",
+                            descriptor.JobKey,
+                            executionDurationMilliseconds,
+                            execution.ExecutionId);
                         break;
                 }
             }
             catch (Exception ex)
             {
+                var executionDurationMilliseconds =
+                    Stopwatch.GetElapsedTime(
+                        executionStartedAt).TotalMilliseconds;
+
                 await TryCompleteHistoryAsync(
                     historyEntry,
                     historyCreated,
@@ -227,8 +261,10 @@ internal sealed class JobGuardianHostedService
 
                 _logger.LogError(
                     ex,
-                    "Job {JobKey} execution coordination failed",
-                    descriptor.JobKey);
+                    "Job {JobKey} execution coordination failed after {DurationMilliseconds} ms (execution ID {ExecutionId})",
+                    descriptor.JobKey,
+                    executionDurationMilliseconds,
+                    execution.ExecutionId);
             }
         }
     }

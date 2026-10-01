@@ -5,6 +5,8 @@ using JobGuardian.Abstractions.Models;
 using JobGuardian.Core.Contracts;
 using JobGuardian.Core.Models;
 using JobGuardian.Core.Observability;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace JobGuardian.Core.Execution;
 
@@ -16,6 +18,8 @@ public sealed class LeaseHeartbeatService
 {
     private readonly ILeaseStore _leaseStore;
 
+    private readonly ILogger<LeaseHeartbeatService> _logger;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="LeaseHeartbeatService"/> class.
     /// </summary>
@@ -24,8 +28,27 @@ public sealed class LeaseHeartbeatService
     /// </param>
     public LeaseHeartbeatService(
         ILeaseStore leaseStore)
+        : this(
+            leaseStore,
+            NullLogger<LeaseHeartbeatService>.Instance)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="LeaseHeartbeatService"/> class.
+    /// </summary>
+    /// <param name="leaseStore">
+    /// The store used to renew the active lease.
+    /// </param>
+    /// <param name="logger">
+    /// The logger used to report successful renewals at trace level.
+    /// </param>
+    public LeaseHeartbeatService(
+        ILeaseStore leaseStore,
+        ILogger<LeaseHeartbeatService> logger)
     {
         _leaseStore = leaseStore;
+        _logger = logger;
     }
 
     /// <summary>
@@ -53,6 +76,9 @@ public sealed class LeaseHeartbeatService
         {
             var startedAt =
                 Stopwatch.GetTimestamp();
+
+            var duration =
+                TimeSpan.Zero;
 
             var result = "error";
 
@@ -110,16 +136,27 @@ public sealed class LeaseHeartbeatService
             }
             finally
             {
+                duration =
+                    Stopwatch.GetElapsedTime(startedAt);
+
                 JobGuardianTelemetry.LeaseOperationCompleted(
                     "renew",
                     result,
-                    Stopwatch.GetElapsedTime(
-                        startedAt).TotalSeconds);
+                    duration.TotalSeconds);
             }
 
             if (!renewed)
             {
                 return false;
+            }
+
+            if (_logger.IsEnabled(LogLevel.Trace))
+            {
+                _logger.LogTrace(
+                    "Lease heartbeat renewed for job {JobKey} (execution ID {ExecutionId}) in {DurationMilliseconds} ms",
+                    execution.JobKey,
+                    execution.ExecutionId,
+                    duration.TotalMilliseconds);
             }
 
             try
