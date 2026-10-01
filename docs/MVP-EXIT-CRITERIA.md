@@ -28,7 +28,8 @@ deployment has been approved.
 - PostgreSQL schema provisioning is an operator responsibility; the provider does not apply migrations
 - The current failure policies are `Ignore` and `RequireManualReset`; automatic retry is not implemented
 - Minimal execution history is persisted by the PostgreSQL provider; listing/query APIs and automatic retention are not implemented
-- Audit behavior, metrics exporters, OpenTelemetry, dashboards and additional database providers are outside the MVP
+- The .NET Core runtime emits execution and lease metrics/traces through `Meter` and `ActivitySource`; SDK/exporter setup, state gauges, and administrative instrumentation remain host/follow-up responsibilities
+- Audit behavior, dashboards and additional database providers are outside the MVP
 - The initial PostgreSQL schema also contains an audit table reserved for future work; its presence does not indicate runtime support
 
 ## Release Gate

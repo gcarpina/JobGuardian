@@ -75,7 +75,7 @@
 
     <ItemGroup>
         <PackageReference Include="Microsoft.SourceLink.GitHub"
-            Version="8.0.0"
+            Version="10.0.112"
             PrivateAssets="All" />
     </ItemGroup>
 
