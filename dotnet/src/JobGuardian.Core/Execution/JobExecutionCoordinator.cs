@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using JobGuardian.Abstractions.Contracts;
 using JobGuardian.Abstractions.Enums;
 using JobGuardian.Abstractions.Models;
 using JobGuardian.Core.Contracts;
 using JobGuardian.Core.Models;
+using JobGuardian.Core.Observability;
 
 namespace JobGuardian.Core.Execution;
 
@@ -57,12 +59,73 @@ public sealed class JobExecutionCoordinator
         Func<CancellationToken, Task> job,
         CancellationToken cancellationToken = default)
     {
+        var startedAt =
+            Stopwatch.GetTimestamp();
+
+        JobGuardianTelemetry.ExecutionStarted();
+
+        using var activity =
+            JobGuardianTelemetry.StartActivity(
+                "JobGuardian.ExecutionAttempt",
+                execution);
+
+        ExecutionResult? result = null;
+
+        try
+        {
+            result =
+                await ExecuteCoreAsync(
+                    execution,
+                    options,
+                    job,
+                    cancellationToken);
+
+            activity?.SetTag(
+                "jobguardian.outcome",
+                result.Outcome.ToString());
+
+            if (result.Outcome is ExecutionOutcome.Failed
+                or ExecutionOutcome.LeaseLost)
+            {
+                activity?.SetTag(
+                    "error.type",
+                    result.Exception?.GetType().FullName);
+                activity?.SetStatus(
+                    ActivityStatusCode.Error);
+            }
+
+            return result;
+        }
+        catch (Exception exception)
+        {
+            activity?.SetTag(
+                "error.type",
+                exception.GetType().FullName);
+            activity?.SetStatus(
+                ActivityStatusCode.Error);
+            throw;
+        }
+        finally
+        {
+            JobGuardianTelemetry.ExecutionCompleted(
+                result?.Outcome.ToString() ?? "Error",
+                Stopwatch.GetElapsedTime(
+                    startedAt).TotalSeconds);
+        }
+    }
+
+    private async Task<ExecutionResult> ExecuteCoreAsync(
+        ActiveExecution execution,
+        JobExecutionOptions options,
+        Func<CancellationToken, Task> job,
+        CancellationToken cancellationToken)
+    {
         bool acquired;
 
         try
         {
             acquired =
-                await _leaseStore.TryAcquireAsync(
+                await TryAcquireLeaseAsync(
                     execution,
                     options.LeaseDuration,
                     cancellationToken);
@@ -117,7 +180,9 @@ public sealed class JobExecutionCoordinator
             try
             {
                 jobTask =
-                    job(
+                    ExecuteJobAsync(
+                        execution,
+                        job,
                         executionTokenSource.Token);
             }
             catch (Exception exception)
@@ -237,10 +302,8 @@ public sealed class JobExecutionCoordinator
             try
             {
                 var released =
-                    await _leaseStore.ReleaseAsync(
-                        execution.JobKey,
-                        execution.ExecutionId,
-                        CancellationToken.None);
+                    await ReleaseLeaseAsync(
+                        execution);
 
                 if (!released)
                 {
@@ -261,6 +324,172 @@ public sealed class JobExecutionCoordinator
         }
 
         return result;
+    }
+
+    private async Task<bool> TryAcquireLeaseAsync(
+        ActiveExecution execution,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken)
+    {
+        var startedAt =
+            Stopwatch.GetTimestamp();
+
+        var result = "error";
+
+        using var activity =
+            JobGuardianTelemetry.StartLeaseActivity(
+                "Acquire",
+                execution);
+
+        try
+        {
+            var acquired =
+                await _leaseStore.TryAcquireAsync(
+                    execution,
+                    leaseDuration,
+                    cancellationToken);
+
+            result =
+                acquired
+                    ? "acquired"
+                    : "not_acquired";
+
+            if (acquired)
+            {
+                JobGuardianTelemetry.LeaseAcquired();
+            }
+
+            activity?.SetTag(
+                "jobguardian.lease.result",
+                result);
+
+            return acquired;
+        }
+        catch (OperationCanceledException exception)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            result = "cancelled";
+            activity?.SetTag(
+                "jobguardian.lease.result",
+                result);
+            activity?.SetTag(
+                "error.type",
+                exception.GetType().FullName);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            activity?.SetTag(
+                "jobguardian.lease.result",
+                result);
+            activity?.SetTag(
+                "error.type",
+                exception.GetType().FullName);
+            activity?.SetStatus(
+                ActivityStatusCode.Error);
+            throw;
+        }
+        finally
+        {
+            JobGuardianTelemetry.LeaseOperationCompleted(
+                "acquire",
+                result,
+                Stopwatch.GetElapsedTime(
+                    startedAt).TotalSeconds);
+        }
+    }
+
+    private async Task<bool> ReleaseLeaseAsync(
+        ActiveExecution execution)
+    {
+        var startedAt =
+            Stopwatch.GetTimestamp();
+
+        var result = "error";
+
+        using var activity =
+            JobGuardianTelemetry.StartLeaseActivity(
+                "Release",
+                execution);
+
+        try
+        {
+            var released =
+                await _leaseStore.ReleaseAsync(
+                    execution.JobKey,
+                    execution.ExecutionId,
+                    CancellationToken.None);
+
+            result =
+                released
+                    ? "released"
+                    : "not_owner";
+
+            activity?.SetTag(
+                "jobguardian.lease.result",
+                result);
+
+            if (!released)
+            {
+                activity?.SetStatus(
+                    ActivityStatusCode.Error);
+            }
+
+            return released;
+        }
+        catch (Exception exception)
+        {
+            activity?.SetTag(
+                "jobguardian.lease.result",
+                result);
+            activity?.SetTag(
+                "error.type",
+                exception.GetType().FullName);
+            activity?.SetStatus(
+                ActivityStatusCode.Error);
+            throw;
+        }
+        finally
+        {
+            JobGuardianTelemetry.LeaseReleased();
+            JobGuardianTelemetry.LeaseOperationCompleted(
+                "release",
+                result,
+                Stopwatch.GetElapsedTime(
+                    startedAt).TotalSeconds);
+        }
+    }
+
+    private static async Task ExecuteJobAsync(
+        ActiveExecution execution,
+        Func<CancellationToken, Task> job,
+        CancellationToken cancellationToken)
+    {
+        using var activity =
+            JobGuardianTelemetry.StartActivity(
+                "JobGuardian.ExecuteJob",
+                execution);
+
+        try
+        {
+            await job(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            activity?.SetTag(
+                "jobguardian.outcome",
+                ExecutionOutcome.Cancelled.ToString());
+            throw;
+        }
+        catch (Exception exception)
+        {
+            activity?.SetTag(
+                "error.type",
+                exception.GetType().FullName);
+            activity?.SetStatus(
+                ActivityStatusCode.Error);
+            throw;
+        }
     }
 
     private static async Task<ExecutionResult> GetJobResultAsync(

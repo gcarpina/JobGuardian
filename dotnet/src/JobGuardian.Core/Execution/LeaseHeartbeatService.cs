@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using JobGuardian.Abstractions.Contracts;
 using JobGuardian.Abstractions.Models;
 
 using JobGuardian.Core.Contracts;
 using JobGuardian.Core.Models;
+using JobGuardian.Core.Observability;
 
 namespace JobGuardian.Core.Execution;
 
@@ -49,12 +51,71 @@ public sealed class LeaseHeartbeatService
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            var renewed =
-                await _leaseStore.RenewAsync(
-                    execution.JobKey,
-                    execution.ExecutionId,
-                    options.LeaseDuration,
-                    cancellationToken);
+            var startedAt =
+                Stopwatch.GetTimestamp();
+
+            var result = "error";
+
+            using var activity =
+                JobGuardianTelemetry.StartLeaseActivity(
+                    "Renew",
+                    execution);
+
+            bool renewed;
+
+            try
+            {
+                renewed =
+                    await _leaseStore.RenewAsync(
+                        execution.JobKey,
+                        execution.ExecutionId,
+                        options.LeaseDuration,
+                        cancellationToken);
+
+                result =
+                    renewed
+                        ? "renewed"
+                        : "not_owner";
+
+                activity?.SetTag(
+                    "jobguardian.lease.result",
+                    result);
+
+                if (!renewed)
+                {
+                    activity?.SetStatus(
+                        ActivityStatusCode.Error);
+                }
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                result = "cancelled";
+                activity?.SetTag(
+                    "jobguardian.lease.result",
+                    result);
+                throw;
+            }
+            catch (Exception exception)
+            {
+                activity?.SetTag(
+                    "jobguardian.lease.result",
+                    result);
+                activity?.SetTag(
+                    "error.type",
+                    exception.GetType().FullName);
+                activity?.SetStatus(
+                    ActivityStatusCode.Error);
+                throw;
+            }
+            finally
+            {
+                JobGuardianTelemetry.LeaseOperationCompleted(
+                    "renew",
+                    result,
+                    Stopwatch.GetElapsedTime(
+                        startedAt).TotalSeconds);
+            }
 
             if (!renewed)
             {
