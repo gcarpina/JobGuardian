@@ -139,6 +139,79 @@ services
 
 ---
 
+# OpenTelemetry: metrics and traces
+
+`JobGuardian.Core` publishes execution and lease metrics and spans through the standard .NET
+`Meter` and `ActivitySource` APIs. The library does not include an OpenTelemetry SDK, exporter,
+collector, or backend: the application chooses and configures these.
+
+Install the hosting and OTLP exporter packages in the application that hosts JobGuardian:
+
+```sh
+dotnet add package OpenTelemetry.Extensions.Hosting
+dotnet add package OpenTelemetry.Exporter.OpenTelemetryProtocol
+```
+
+Register the JobGuardian meter and activity source with the application’s telemetry pipeline:
+
+```csharp
+using JobGuardian.Core.Observability;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+
+services
+    .AddOpenTelemetry()
+    .ConfigureResource(resource =>
+        resource.AddService("billing-worker"))
+    .WithMetrics(metrics =>
+        metrics.AddMeter(
+            JobGuardianInstrumentation.MeterName)
+            .AddOtlpExporter())
+    .WithTracing(tracing =>
+        tracing.AddSource(
+            JobGuardianInstrumentation.ActivitySourceName)
+            .AddOtlpExporter());
+```
+
+Point the application at an OTLP receiver, such as an OpenTelemetry Collector. For example:
+
+```sh
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+```
+
+The receiver address, protocol, authentication, and TLS settings depend on the deployment. Start
+the collector/backend separately; registering the exporter does not create one. Without an
+OpenTelemetry listener/exporter, the application will not collect or expose JobGuardian telemetry.
+
+The current metric instruments are:
+
+| Metric | Meaning | Attributes |
+|---|---|---|
+| `jobguardian.execution.started` | Coordination attempts started, including attempts later skipped | None |
+| `jobguardian.execution.attempts` | Completed attempts by outcome | `outcome` |
+| `jobguardian.execution.duration` | Attempt duration in seconds | `outcome` |
+| `jobguardian.execution.active` | Attempts currently being coordinated | None |
+| `jobguardian.lease.active` | Leases currently held by this process | None |
+| `jobguardian.lease.operations` | Acquire, renew, and release operation counts | `operation`, `result` |
+| `jobguardian.lease.operation.duration` | Lease-operation duration in seconds | `operation`, `result` |
+
+Traces contain an `ExecutionAttempt` parent with child spans for lease acquisition, job execution,
+heartbeat renewals, and lease release. They include job namespace/name and execution ID attributes.
+Metrics deliberately omit job, tenant, owner, and execution identifiers to prevent high-cardinality
+series. The active-lease gauge is process-local; aggregate it across the worker instances to see
+the deployment total. Exception messages are not added to telemetry by default.
+
+This initial runtime does not yet expose blocked-job counts, abandoned-execution counts, or
+administrative-action metrics. Those signals require state enumeration or administrative APIs that
+are not currently part of the .NET runtime.
+
+For production, configure service identity, endpoint security, sampling, retention, access control,
+and alerting in the application/collector environment. Do not put tenant or execution identifiers
+into metric labels; use traces for sampled diagnosis and execution history for persisted outcomes.
+
+---
+
 # Failure Policies
 
 ## Ignore

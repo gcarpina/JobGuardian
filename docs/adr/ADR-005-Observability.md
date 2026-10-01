@@ -47,95 +47,101 @@ The reference monitoring stack is:
 
 ---
 
-## Metrics
+## .NET Instrumentation
 
-The following metrics are part of JobGuardian Protocol v1.
-
-### Lease Metrics
-
-```text
-jobguardian_lease_acquired_total
-jobguardian_lease_acquire_failed_total
-jobguardian_lease_renew_total
-jobguardian_lease_lost_total
-```
-
-### Execution Metrics
+`JobGuardian.Core` publishes instrumentation using the .NET `Meter` and `ActivitySource` APIs.
+It does not depend on an OpenTelemetry SDK or exporter. Applications opt in by configuring
+OpenTelemetry to listen to the names exported by `JobGuardianInstrumentation`:
 
 ```text
-jobguardian_execution_started_total
-jobguardian_execution_completed_total
-jobguardian_execution_failed_total
-jobguardian_execution_abandoned_total
+Meter:          JobGuardian
+ActivitySource: JobGuardian
 ```
 
-### Duration Metrics
+The original Protocol v1 metric requirements remain the target contract:
+
+| Required signal | Current .NET coverage |
+|---|---|
+| `jobguardian_lease_acquired_total` | `jobguardian.lease.operations` with `operation=acquire`, `result=acquired` |
+| `jobguardian_lease_acquire_failed_total` | `jobguardian.lease.operations` with `operation=acquire`, `result=not_acquired` or `result=error` |
+| `jobguardian_lease_renew_total` | `jobguardian.lease.operations` with `operation=renew` |
+| `jobguardian_lease_lost_total` | Only an approximate signal exists: lease operations with `result=not_owner`; no one-to-one loss counter |
+| `jobguardian_execution_started_total` | `jobguardian.execution.started` counts coordination attempts, including attempts later skipped |
+| `jobguardian_execution_completed_total` | `jobguardian.execution.attempts` counts terminal coordination outcomes, including skipped attempts |
+| `jobguardian_execution_failed_total` | Derivable from `jobguardian.execution.attempts` with `outcome=Failed`; the instrument name differs |
+| `jobguardian_execution_abandoned_total` | Not emitted; abrupt process termination cannot reliably emit a completion counter |
+| `jobguardian_execution_duration_seconds` | `jobguardian.execution.duration` |
+| `jobguardian_active_leases` | `jobguardian.lease.active`, a process-local observable gauge |
+| `jobguardian_blocked_jobs` | Not emitted; current state APIs do not enumerate the blocked-job population |
+| `jobguardian_manual_runs_total` | Not emitted; no administrative/manual-run API is wired to runtime telemetry |
+| `jobguardian_force_release_total` | Not emitted; no force-release API exists in the .NET runtime |
+
+Coverage in this table is semantic, not an exact OpenTelemetry instrument-name or Prometheus
+exported-name mapping. The current names do not directly reproduce every protocol metric name, and
+the start/completion counters measure coordination attempts rather than only callbacks that ran
+under a lease. In particular, abandoned executions, exact lease-loss counting, blocked-job
+population and administrative-action metrics remain gaps; do not treat the current implementation
+as fully compliant with the original Protocol v1 metric contract.
+
+The current .NET metric instruments are:
+
+| Instrument | Type | Unit | Attributes |
+|---|---|---|---|
+| `jobguardian.execution.started` | Counter | `{attempt}` | None |
+| `jobguardian.execution.attempts` | Counter | `{attempt}` | `outcome` |
+| `jobguardian.execution.duration` | Histogram | `s` | `outcome` |
+| `jobguardian.execution.active` | UpDownCounter | `{execution}` | None |
+| `jobguardian.lease.active` | ObservableGauge | `{lease}` | None |
+| `jobguardian.lease.operations` | Counter | `{operation}` | `operation`, `result` |
+| `jobguardian.lease.operation.duration` | Histogram | `s` | `operation`, `result` |
+
+`jobguardian.execution.duration` measures the full coordination attempt, including lease
+acquisition and release, rather than callback time alone. `outcome` uses `Succeeded`, `Failed`,
+`Cancelled`, `LeaseLost`, or `Skipped`. `Error` is a
+telemetry-only value used if coordination throws before it can return an `ExecutionResult`; it is
+not an `ExecutionOutcome` and is never persisted to history.
+`operation` uses `acquire`, `renew`, or `release`. `result` uses `acquired`, `not_acquired`,
+`renewed`, `released`, `not_owner`, `cancelled`, or `error`, as applicable.
+
+Metric attributes are intentionally low-cardinality. Job keys, tenant IDs, execution IDs,
+owner IDs, and exception messages are not metric attributes.
+
+The current .NET trace hierarchy includes:
 
 ```text
-jobguardian_execution_duration_seconds
+JobGuardian.ExecutionAttempt
+├── JobGuardian.AcquireLease
+├── JobGuardian.ExecuteJob
+│   └── JobGuardian.RenewLease (one span per renewal attempt)
+└── JobGuardian.ReleaseLease
 ```
 
-Type:
+Spans include `jobguardian.job.namespace`, `jobguardian.job.name`, and
+`jobguardian.execution.id`. Lease spans additionally include `jobguardian.lease.operation` and
+`jobguardian.lease.result`. Failed and lease-lost outcomes are marked as errors; expected skipped
+attempts and cooperative cancellations are not. Exception messages and owner/tenant identifiers
+are not added by default.
 
-```text
-Histogram
-```
+The original trace requirements also call for spans around `RunNow`, `ResetFailureState`, and
+`ForceReleaseLease`. These administrative APIs do not exist in the current .NET runtime and
+therefore do not currently emit spans.
 
-### State Metrics
+The original label guidance is refined for OpenTelemetry: `environment` and `application_name`
+belong in the service resource, while `outcome` is a bounded metric attribute. Tenant and job
+identifiers are deliberately omitted from metric attributes by default because they can create
+high-cardinality series and expose sensitive context. `run_type` is not currently available on
+`ActiveExecution`; adding it requires a runtime contract change. Job identity remains available on
+sampled traces and persisted execution history.
 
-```text
-jobguardian_active_leases
-jobguardian_blocked_jobs
-```
+The .NET implementation does not yet emit blocked-job population or administrative-action
+metrics/spans, or correlation/conversation identifiers. Abandoned executions cannot be counted
+reliably after abrupt process termination; operational consumers should combine persisted history,
+lease state and process health rather than interpret a missing completion event as a reliable
+counter.
 
-Type:
-
-```text
-Gauge
-```
-
-### Administrative Metrics
-
-```text
-jobguardian_manual_runs_total
-jobguardian_force_release_total
-```
-
----
-
-## Labels
-
-Metrics should expose the following labels whenever applicable:
-
-```text
-tenant_id
-job_namespace
-job_name
-environment
-application_name
-run_type
-outcome
-```
-
-Labels should remain stable across SDK implementations.
-
----
-
-## Tracing
-
-OpenTelemetry tracing is strongly recommended.
-
-The following operations should create spans:
-
-```text
-AcquireLease
-RenewLease
-ReleaseLease
-ExecuteJob
-RunNow
-ResetFailureState
-ForceReleaseLease
-```
+Metric names, labels, and trace semantics must remain equivalent across SDKs as required by
+Protocol v1. The current .NET names are its implementation mapping; Java and Python parity remains
+unimplemented and must be verified before claiming cross-language compliance.
 
 ---
 
@@ -189,17 +195,24 @@ Dashboard functionality must not depend on observability tooling availability.
 
 ---
 
-## Prometheus
+## Export and Collection
 
-Metrics must be exposed in a format compatible with Prometheus scraping.
+The application owns OpenTelemetry SDK registration, resource identity, exporters, endpoint
+configuration, sampling, and collector/backend operations. JobGuardian does not expose an HTTP
+metrics endpoint or send telemetry until an application configures a listener and exporter. The
+configured exporter must expose a Prometheus-compatible scrape or forward metrics through a
+Prometheus-compatible collector when Prometheus is the monitoring backend.
 
-Direct Prometheus integration and OpenTelemetry-based integration are both acceptable.
+For Prometheus deployments, applications may use an OpenTelemetry Prometheus exporter or export
+through an OpenTelemetry Collector. Avoid putting tenant, job, or execution identifiers on metric
+labels; use sampled traces or the execution history for per-execution diagnosis.
 
 ---
 
-## Jaeger
+## Tracing Backends
 
-Jaeger is the reference tracing backend for the initial implementation.
+No tracing backend is required by the library. OTLP-compatible backends such as Jaeger, Grafana
+Tempo, and cloud observability services can be selected by the application.
 
 Future tracing backends may include:
 
@@ -255,6 +268,10 @@ Using OpenTelemetry avoids vendor lock-in while remaining compatible with widely
 
 ## Compliance
 
-An SDK implementation is compliant with JobGuardian Protocol v1 only if it exposes the required protocol-defined metrics.
+This ADR defines the target observability direction. The initial .NET implementation emits the
+metrics and spans listed above. Structured log export, administrative instrumentation, state
+gauges, sampling policy, and equivalent Java/Python implementations remain follow-up work.
 
-Tracing support is strongly recommended and should be considered mandatory for production deployments.
+Production applications must configure an exporter and collector/backend, choose an appropriate
+sampling and retention policy, protect access to telemetry data, and alert on service objectives
+that matter to their workload.

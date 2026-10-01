@@ -29,6 +29,10 @@ A pull request should include:
 - tests
 - documentation updates when applicable
 
+Keep the pull request description concise and factual. Describe only changes included in the
+pull request; do not include planned follow-up work, deferred scope, or choices about what was
+not changed.
+
 ## Architecture Changes
 
 Significant architectural changes should be discussed before implementation.
