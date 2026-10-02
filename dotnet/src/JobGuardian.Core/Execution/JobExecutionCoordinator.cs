@@ -5,6 +5,8 @@ using JobGuardian.Abstractions.Models;
 using JobGuardian.Core.Contracts;
 using JobGuardian.Core.Models;
 using JobGuardian.Core.Observability;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace JobGuardian.Core.Execution;
 
@@ -18,6 +20,8 @@ public sealed class JobExecutionCoordinator
 
     private readonly ILeaseHeartbeatService _heartbeatService;
 
+    private readonly ILogger<JobExecutionCoordinator> _logger;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="JobExecutionCoordinator"/> class.
     /// </summary>
@@ -27,12 +31,19 @@ public sealed class JobExecutionCoordinator
     /// <param name="heartbeatService">
     /// The heartbeat service used to renew the lease while the job runs.
     /// </param>
+    /// <param name="logger">
+    /// The logger used to report callback retries, when logging is configured.
+    /// </param>
     public JobExecutionCoordinator(
         ILeaseStore leaseStore,
-        ILeaseHeartbeatService heartbeatService)
+        ILeaseHeartbeatService heartbeatService,
+        ILogger<JobExecutionCoordinator>? logger = null)
     {
         _leaseStore = leaseStore;
         _heartbeatService = heartbeatService;
+        _logger =
+            logger
+            ?? NullLogger<JobExecutionCoordinator>.Instance;
     }
 
     /// <summary>
@@ -59,6 +70,13 @@ public sealed class JobExecutionCoordinator
         Func<CancellationToken, Task> job,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(job);
+
+        JobExecutionRetrySettings.Validate(
+            options.MaxAttempts,
+            options.RetryDelay);
+
         var startedAt =
             Stopwatch.GetTimestamp();
 
@@ -68,6 +86,9 @@ public sealed class JobExecutionCoordinator
             JobGuardianTelemetry.StartActivity(
                 "JobGuardian.ExecutionAttempt",
                 execution);
+        activity?.SetTag(
+            "jobguardian.execution.max_attempts",
+            options.MaxAttempts);
 
         ExecutionResult? result = null;
 
@@ -175,95 +196,128 @@ public sealed class JobExecutionCoordinator
                         exception);
             }
 
-            Task jobTask;
-
-            try
+            for (var attempt = 1; attempt <= options.MaxAttempts; attempt++)
             {
-                jobTask =
-                    ExecuteJobAsync(
-                        execution,
-                        job,
-                        executionTokenSource.Token);
-            }
-            catch (Exception exception)
-            {
-                jobTask =
-                    Task.FromException(
-                        exception);
-            }
+                if (attempt > 1 && heartbeatTask.IsCompleted)
+                {
+                    result =
+                        ToLeaseLostResult(
+                            result,
+                            await GetHeartbeatFailureAsync(
+                                heartbeatTask));
+                    break;
+                }
 
-            var completedTask =
-                await Task.WhenAny(
-                    jobTask,
-                    heartbeatTask);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    result = new ExecutionResult(
+                        ExecutionOutcome.Cancelled,
+                        new OperationCanceledException(
+                            cancellationToken));
+                    break;
+                }
 
-            if (completedTask == heartbeatTask)
-            {
-                bool heartbeatSucceeded;
-                Exception? heartbeatException = null;
+                Task jobTask;
 
                 try
                 {
-                    heartbeatSucceeded =
-                        await heartbeatTask;
-                }
-                catch (OperationCanceledException)
-                    when (heartbeatTokenSource.IsCancellationRequested)
-                {
-                    heartbeatSucceeded = true;
-                }
-                catch (OperationCanceledException exception)
-                {
-                    heartbeatSucceeded = false;
-                    heartbeatException = exception;
+                    jobTask =
+                        ExecuteJobAsync(
+                            execution,
+                            job,
+                            attempt,
+                            executionTokenSource.Token);
                 }
                 catch (Exception exception)
                 {
-                    heartbeatSucceeded = false;
-                    heartbeatException = exception;
+                    jobTask =
+                        Task.FromException(
+                            exception);
                 }
 
-                if (!heartbeatSucceeded)
-                {
-                    executionTokenSource.Cancel();
-                    Exception? jobException = null;
+                var completedTask =
+                    await Task.WhenAny(
+                        jobTask,
+                        heartbeatTask);
 
-                    try
-                    {
-                        await jobTask;
-                    }
-                    catch (OperationCanceledException)
-                        when (executionTokenSource.IsCancellationRequested)
-                    {
-                    }
-                    catch (Exception exception)
-                    {
-                        jobException = exception;
-                    }
+                if (completedTask == heartbeatTask)
+                {
+                    var heartbeatException =
+                        await GetHeartbeatFailureAsync(
+                            heartbeatTask);
+
+                    executionTokenSource.Cancel();
+                    var jobException =
+                        await ObserveJobTaskAsync(
+                            jobTask,
+                            executionTokenSource.Token);
 
                     result = new ExecutionResult(
                         ExecutionOutcome.LeaseLost,
-                        heartbeatException is not null && jobException is not null
+                        jobException is not null
                             ? new AggregateException(
                                 heartbeatException,
                                 jobException)
-                            : heartbeatException ?? jobException);
+                            : heartbeatException);
+                    break;
                 }
 
-                if (heartbeatSucceeded)
-                {
-                    result =
-                        await GetJobResultAsync(
-                            jobTask,
-                            cancellationToken);
-                }
-            }
-            else
-            {
                 result =
                     await GetJobResultAsync(
                         jobTask,
                         cancellationToken);
+
+                if (result.Outcome != ExecutionOutcome.Failed
+                    || attempt == options.MaxAttempts
+                    || cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                JobGuardianTelemetry.ExecutionRetryScheduled();
+                _logger.LogWarning(
+                    result.Exception,
+                    "Job callback failed; retrying attempt {Attempt} of {MaxAttempts} after {RetryDelay} for {JobKey} execution {ExecutionId}",
+                    attempt + 1,
+                    options.MaxAttempts,
+                    options.RetryDelay,
+                    execution.JobKey,
+                    execution.ExecutionId);
+
+                if (options.RetryDelay > TimeSpan.Zero)
+                {
+                    var retryDelayTask =
+                        Task.Delay(
+                            options.RetryDelay,
+                            executionTokenSource.Token);
+                    var delayCompletedTask =
+                        await Task.WhenAny(
+                            retryDelayTask,
+                            heartbeatTask);
+
+                    if (delayCompletedTask == heartbeatTask)
+                    {
+                        result =
+                            ToLeaseLostResult(
+                                result,
+                                await GetHeartbeatFailureAsync(
+                                    heartbeatTask));
+                        break;
+                    }
+
+                    try
+                    {
+                        await retryDelayTask;
+                    }
+                    catch (OperationCanceledException exception)
+                        when (executionTokenSource.IsCancellationRequested)
+                    {
+                        result = new ExecutionResult(
+                            ExecutionOutcome.Cancelled,
+                            exception);
+                        break;
+                    }
+                }
             }
         }
         finally
@@ -277,7 +331,8 @@ public sealed class JobExecutionCoordinator
                     var heartbeatSucceeded =
                         await heartbeatTask;
 
-                    if (!heartbeatSucceeded)
+                    if (!heartbeatSucceeded
+                        && result.Outcome != ExecutionOutcome.LeaseLost)
                     {
                         result =
                             ToLeaseLostResult(
@@ -292,10 +347,13 @@ public sealed class JobExecutionCoordinator
                 }
                 catch (Exception exception)
                 {
-                    result =
-                        ToLeaseLostResult(
-                            result,
-                            exception);
+                    if (result.Outcome != ExecutionOutcome.LeaseLost)
+                    {
+                        result =
+                            ToLeaseLostResult(
+                                result,
+                                exception);
+                    }
                 }
             }
 
@@ -463,12 +521,16 @@ public sealed class JobExecutionCoordinator
     private static async Task ExecuteJobAsync(
         ActiveExecution execution,
         Func<CancellationToken, Task> job,
+        int attempt,
         CancellationToken cancellationToken)
     {
         using var activity =
             JobGuardianTelemetry.StartActivity(
                 "JobGuardian.ExecuteJob",
                 execution);
+        activity?.SetTag(
+            "jobguardian.execution.callback.attempt",
+            attempt);
 
         try
         {
@@ -515,6 +577,46 @@ public sealed class JobExecutionCoordinator
             return new ExecutionResult(
                 ExecutionOutcome.Failed,
                 exception);
+        }
+    }
+
+    private static async Task<Exception> GetHeartbeatFailureAsync(
+        Task<bool> heartbeatTask)
+    {
+        try
+        {
+            if (await heartbeatTask)
+            {
+                return new InvalidOperationException(
+                    "Lease heartbeat stopped before execution completed.");
+            }
+
+            return new InvalidOperationException(
+                "Lease heartbeat could not renew the lease.");
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
+    }
+
+    private static async Task<Exception?> ObserveJobTaskAsync(
+        Task jobTask,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await jobTask;
+            return null;
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+        catch (Exception exception)
+        {
+            return exception;
         }
     }
 

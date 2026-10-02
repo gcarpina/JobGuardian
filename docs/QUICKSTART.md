@@ -78,9 +78,28 @@ services.AddJob<InvoiceSynchronizationJob>(
     {
         LeaseDuration = TimeSpan.FromMinutes(1),
         HeartbeatInterval = TimeSpan.FromSeconds(10),
-        FailurePolicy = FailurePolicy.RequireManualReset
+        FailurePolicy = FailurePolicy.RequireManualReset,
+        MaxAttempts = 3,
+        RetryDelay = TimeSpan.FromSeconds(5)
     });
 ```
+
+`MaxAttempts` counts total callback invocations, including the initial one. It defaults to `1`
+(no retry), accepts values from 1 to 10, and uses a fixed `RetryDelay` between failed attempts
+(default one second; maximum five minutes). A zero delay is allowed. Only callback failures are
+retried; skipped executions, cancellation, and lease loss are terminal outcomes. The same lease and
+heartbeat cover all callback attempts and the retry delays.
+
+The retry delay is fixed; exponential backoff and jitter are not currently provided. `MaxAttempts`
+limits callback invocations, not elapsed time, because JobGuardian does not impose a callback
+timeout. A slow or stuck callback can continue holding the lease while its heartbeat runs.
+
+An exception does not prove that a callback's side effects did not happen. The callback may be
+invoked again after partially or fully completing an external operation. Make retryable work
+idempotent, use a stable business idempotency key, or deduplicate side effects in the system that
+owns them. JobGuardian does not provide exactly-once execution. The execution history and failure
+policy record or act on the final outcome of the coordinated execution, not each internal callback
+attempt.
 
 ---
 
@@ -190,6 +209,7 @@ The current metric instruments are:
 |---|---|---|
 | `jobguardian.execution.started` | Coordination attempts started, including attempts later skipped | None |
 | `jobguardian.execution.attempts` | Completed attempts by outcome | `outcome` |
+| `jobguardian.execution.retries` | Callback retries scheduled after a failed attempt | None |
 | `jobguardian.execution.duration` | Attempt duration in seconds | `outcome` |
 | `jobguardian.execution.active` | Attempts currently being coordinated | None |
 | `jobguardian.lease.active` | Leases currently held by this process | None |
@@ -198,6 +218,8 @@ The current metric instruments are:
 
 Traces contain an `ExecutionAttempt` parent with child spans for lease acquisition, job execution,
 heartbeat renewals, and lease release. They include job namespace/name and execution ID attributes.
+Each callback span includes `jobguardian.execution.callback.attempt`; the parent includes the
+configured `jobguardian.execution.max_attempts`.
 Metrics deliberately omit job, tenant, owner, and execution identifiers to prevent high-cardinality
 series. The active-lease gauge is process-local; aggregate it across the worker instances to see
 the deployment total. Exception messages are not added to telemetry by default.
@@ -215,7 +237,8 @@ attempts are logged at `Debug`; failures at `Error`, lease loss at `Warning`, an
 cancellation at `Information`. Successful heartbeat renewals are logged at `Trace` only, so they
 can be enabled temporarily for diagnostics without adding routine log volume. Configure providers
 and levels in the hosting application; job keys and execution IDs appear in execution logs for
-correlation. Terminal outcome logs include `DurationMilliseconds` for the coordinator attempt,
+correlation. Each scheduled retry emits a `Warning` with its next attempt number and configured
+delay. Terminal outcome logs include `DurationMilliseconds` for the coordinator attempt,
 covering lease acquisition, job execution, heartbeat monitoring, and lease release; skipped
 attempts report the duration of their lease-acquisition attempt. Apply the application's normal
 log access and retention controls.

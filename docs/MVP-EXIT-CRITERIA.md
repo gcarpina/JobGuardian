@@ -16,8 +16,9 @@ deployment has been approved.
 | In-memory and PostgreSQL providers are registered and usable in their intended scopes | Dependency-injection tests and PostgreSQL integration tests | Met |
 | The consumer guide explains setup, provider boundaries, schema provisioning and reset | [Quick Start](./QUICKSTART.md) | Met |
 | Accepted ADRs distinguish implemented scope from deferred capabilities | ADR-011, ADR-012 and ADR-013 | Met |
-| The complete automated suite passes | `dotnet test dotnet/JobGuardian.sln --no-restore` — 106 passed, 0 failed on 2026-09-29 | Met |
+| The complete automated suite passes on .NET 8 and .NET 10 | `dotnet test dotnet/JobGuardian.sln --no-restore` | Met |
 | The public coordinator API change has migration guidance | [Changelog](../CHANGELOG.md) | Met |
+| Callback retries are finite, configurable, and preserve a single final execution outcome | Coordinator and hosted-service tests; [ADR-011](./adr/ADR-011-Failure-Handling-And-Execution-Outcome-Model.md) | Met |
 
 ## Supported Scope and Boundaries
 
@@ -26,7 +27,7 @@ deployment has been approved.
 - The in-memory provider coordinates only within one process and loses lease and state data when the process exits
 - PostgreSQL is required for coordination and persistent blocked state across application instances
 - PostgreSQL schema provisioning is an operator responsibility; the provider does not apply migrations
-- The current failure policies are `Ignore` and `RequireManualReset`; automatic retry is not implemented
+- The current failure policies are `Ignore` and `RequireManualReset`; bounded callback retries are opt-in and default to one total attempt
 - Minimal execution history is persisted by the PostgreSQL provider; listing/query APIs and automatic retention are not implemented
 - The .NET Core runtime emits execution and lease metrics/traces through `Meter` and `ActivitySource`; SDK/exporter setup, state gauges, and administrative instrumentation remain host/follow-up responsibilities
 - Audit behavior, dashboards and additional database providers are outside the MVP

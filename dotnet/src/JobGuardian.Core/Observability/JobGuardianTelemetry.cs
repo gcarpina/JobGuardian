@@ -26,6 +26,12 @@ internal static class JobGuardianTelemetry
             unit: "{attempt}",
             description: "Number of completed JobGuardian execution attempts.");
 
+    private static readonly Counter<long> ExecutionRetries =
+        Meter.CreateCounter<long>(
+            "jobguardian.execution.retries",
+            unit: "{retry}",
+            description: "Number of callback retries scheduled after a failed attempt.");
+
     private static readonly Histogram<double> ExecutionDuration =
         Meter.CreateHistogram<double>(
             "jobguardian.execution.duration",
@@ -81,6 +87,11 @@ internal static class JobGuardianTelemetry
     {
         ExecutionStarts.Add(1);
         ActiveExecutions.Add(1);
+    }
+
+    public static void ExecutionRetryScheduled()
+    {
+        ExecutionRetries.Add(1);
     }
 
     public static void LeaseAcquired()

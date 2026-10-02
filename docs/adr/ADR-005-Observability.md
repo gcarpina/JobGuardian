@@ -89,6 +89,7 @@ The current .NET metric instruments are:
 |---|---|---|---|
 | `jobguardian.execution.started` | Counter | `{attempt}` | None |
 | `jobguardian.execution.attempts` | Counter | `{attempt}` | `outcome` |
+| `jobguardian.execution.retries` | Counter | `{retry}` | None |
 | `jobguardian.execution.duration` | Histogram | `s` | `outcome` |
 | `jobguardian.execution.active` | UpDownCounter | `{execution}` | None |
 | `jobguardian.lease.active` | ObservableGauge | `{lease}` | None |
@@ -120,7 +121,11 @@ Spans include `jobguardian.job.namespace`, `jobguardian.job.name`, and
 `jobguardian.execution.id`. Lease spans additionally include `jobguardian.lease.operation` and
 `jobguardian.lease.result`. Failed and lease-lost outcomes are marked as errors; expected skipped
 attempts and cooperative cancellations are not. Exception messages and owner/tenant identifiers
-are not added by default.
+are not added by default. Each `JobGuardian.ExecuteJob` span includes
+`jobguardian.execution.callback.attempt`, and the parent execution span includes
+`jobguardian.execution.max_attempts`. The retry counter counts callback retries scheduled after a
+failure; it does not count the initial invocation or retries prevented by cancellation or lease
+loss.
 
 The original trace requirements also call for spans around `RunNow`, `ResetFailureState`, and
 `ForceReleaseLease`. These administrative APIs do not exist in the current .NET runtime and

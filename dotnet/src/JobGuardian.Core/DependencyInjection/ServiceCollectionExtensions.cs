@@ -99,6 +99,12 @@ public static class ServiceCollectionExtensions
         JobExecutionPolicy policy)
         where TJob : class, IJob
     {
+        ArgumentNullException.ThrowIfNull(policy);
+
+        JobExecutionRetrySettings.Validate(
+            policy.MaxAttempts,
+            policy.RetryDelay);
+
         services.AddTransient<TJob>();
 
         services.AddSingleton(

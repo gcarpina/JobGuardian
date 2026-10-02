@@ -7,6 +7,7 @@ Notable changes to JobGuardian are documented here.
 ### Added
 
 - `JobExecutionPolicy.FailurePolicy` configures how execution failures affect future job eligibility
+- Bounded callback retries through `JobExecutionPolicy.MaxAttempts` and `RetryDelay`; retries are disabled by default
 - End-to-end coverage for failure handling, blocked jobs, manual reset, and PostgreSQL state persistence
 
 ### Changed
