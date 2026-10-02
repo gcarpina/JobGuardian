@@ -289,7 +289,13 @@ internal sealed class JobGuardianHostedService
                 descriptor.Policy.LeaseDuration,
 
             HeartbeatInterval =
-                descriptor.Policy.HeartbeatInterval
+                descriptor.Policy.HeartbeatInterval,
+
+            MaxAttempts =
+                descriptor.Policy.MaxAttempts,
+
+            RetryDelay =
+                descriptor.Policy.RetryDelay
         };
     }
 

@@ -3,6 +3,7 @@ using JobGuardian.Abstractions.Enums;
 using JobGuardian.Core.Execution;
 using JobGuardian.Core.Models;
 using JobGuardian.Core.Tests.Infrastructure;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 
 namespace JobGuardian.Core.Tests.Execution;
@@ -762,5 +763,441 @@ public sealed class JobExecutionCoordinatorTests
                 execution.JobKey,
                 execution.ExecutionId,
                 Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CT160_Execute_When_Callback_Fails_Then_Succeeds_Should_Retry_Under_One_Lease()
+    {
+        var leaseStore =
+            CreateLeaseStore();
+
+        leaseStore
+            .TryAcquireAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var heartbeatService =
+            CreateHeartbeatService();
+
+        heartbeatService
+            .RunAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<JobExecutionOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var token =
+                    call.ArgAt<CancellationToken>(2);
+
+                try
+                {
+                    await Task.Delay(
+                        Timeout.InfiniteTimeSpan,
+                        token);
+                }
+                catch (OperationCanceledException)
+                    when (token.IsCancellationRequested)
+                {
+                }
+
+                return true;
+            });
+
+        var coordinator =
+            new JobExecutionCoordinator(
+                leaseStore,
+                heartbeatService);
+
+        var calls = 0;
+        var options =
+            TestData.CreateOptions() with
+            {
+                MaxAttempts = 3,
+                RetryDelay = TimeSpan.Zero
+            };
+
+        var result =
+            await coordinator.ExecuteAsync(
+                TestData.CreateExecution("owner-a"),
+                options,
+                _ =>
+                {
+                    if (Interlocked.Increment(ref calls) == 1)
+                    {
+                        throw new InvalidOperationException(
+                            "Transient callback failure.");
+                    }
+
+                    return Task.CompletedTask;
+                });
+
+        Assert.Equal(
+            ExecutionOutcome.Succeeded,
+            result.Outcome);
+        Assert.Equal(
+            2,
+            calls);
+
+        await leaseStore
+            .Received(1)
+            .TryAcquireAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>());
+        await leaseStore
+            .Received(1)
+            .ReleaseAsync(
+                Arg.Any<JobKey>(),
+                Arg.Any<Guid>(),
+                Arg.Any<CancellationToken>());
+        await heartbeatService
+            .Received(1)
+            .RunAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<JobExecutionOptions>(),
+                Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CT161_Execute_When_All_Callback_Attempts_Fail_Should_Return_Final_Failure()
+    {
+        var leaseStore =
+            CreateLeaseStore();
+
+        leaseStore
+            .TryAcquireAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var heartbeatService =
+            CreateHeartbeatService();
+
+        heartbeatService
+            .RunAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<JobExecutionOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var token =
+                    call.ArgAt<CancellationToken>(2);
+
+                try
+                {
+                    await Task.Delay(
+                        Timeout.InfiniteTimeSpan,
+                        token);
+                }
+                catch (OperationCanceledException)
+                    when (token.IsCancellationRequested)
+                {
+                }
+
+                return true;
+            });
+
+        var coordinator =
+            new JobExecutionCoordinator(
+                leaseStore,
+                heartbeatService);
+        var calls = 0;
+
+        var result =
+            await coordinator.ExecuteAsync(
+                TestData.CreateExecution("owner-a"),
+                TestData.CreateOptions() with
+                {
+                    MaxAttempts = 3,
+                    RetryDelay = TimeSpan.Zero
+                },
+                _ =>
+                {
+                    Interlocked.Increment(ref calls);
+                    throw new InvalidOperationException(
+                        "Callback failure.");
+                });
+
+        Assert.Equal(
+            ExecutionOutcome.Failed,
+            result.Outcome);
+        Assert.IsType<InvalidOperationException>(
+            result.Exception);
+        Assert.Equal(
+            3,
+            calls);
+    }
+
+    [Fact]
+    public async Task CT162_Execute_When_Cancelled_During_Retry_Delay_Should_Not_Start_Next_Attempt()
+    {
+        var leaseStore =
+            CreateLeaseStore();
+
+        leaseStore
+            .TryAcquireAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var heartbeatService =
+            CreateHeartbeatService();
+
+        heartbeatService
+            .RunAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<JobExecutionOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var token =
+                    call.ArgAt<CancellationToken>(2);
+
+                try
+                {
+                    await Task.Delay(
+                        Timeout.InfiniteTimeSpan,
+                        token);
+                }
+                catch (OperationCanceledException)
+                    when (token.IsCancellationRequested)
+                {
+                }
+
+                return true;
+            });
+
+        using var cancellationTokenSource =
+            new CancellationTokenSource();
+        var retryScheduled =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        var coordinator =
+            new JobExecutionCoordinator(
+                leaseStore,
+                heartbeatService,
+                new RetryScheduledLogger(
+                    () => retryScheduled.TrySetResult()));
+        var calls = 0;
+
+        var executeTask =
+            coordinator.ExecuteAsync(
+                TestData.CreateExecution("owner-a"),
+                TestData.CreateOptions() with
+                {
+                    MaxAttempts = 3,
+                    RetryDelay = TimeSpan.FromMinutes(1)
+                },
+                _ =>
+                {
+                    Interlocked.Increment(ref calls);
+                    throw new InvalidOperationException(
+                        "Transient callback failure.");
+                },
+                cancellationTokenSource.Token);
+
+        await retryScheduled.Task;
+        cancellationTokenSource.Cancel();
+
+        var result =
+            await executeTask;
+
+        Assert.Equal(
+            ExecutionOutcome.Cancelled,
+            result.Outcome);
+        Assert.Equal(
+            1,
+            calls);
+    }
+
+    [Fact]
+    public async Task CT163_Execute_When_Lease_Is_Lost_During_Retry_Delay_Should_Not_Start_Next_Attempt()
+    {
+        var leaseStore =
+            CreateLeaseStore();
+
+        leaseStore
+            .TryAcquireAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var heartbeatCompletion =
+            new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        var heartbeatService =
+            CreateHeartbeatService();
+
+        heartbeatService
+            .RunAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<JobExecutionOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ => heartbeatCompletion.Task);
+
+        var coordinator =
+            new JobExecutionCoordinator(
+                leaseStore,
+                heartbeatService);
+        var callbackInvoked =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+
+        var executeTask =
+            coordinator.ExecuteAsync(
+                TestData.CreateExecution("owner-a"),
+                TestData.CreateOptions() with
+                {
+                    MaxAttempts = 3,
+                    RetryDelay = TimeSpan.FromMinutes(1)
+                },
+                _ =>
+                {
+                    Interlocked.Increment(ref calls);
+                    callbackInvoked.TrySetResult();
+                    throw new InvalidOperationException(
+                        "Transient callback failure.");
+                });
+
+        await callbackInvoked.Task;
+        heartbeatCompletion.SetResult(false);
+
+        var result =
+            await executeTask;
+
+        Assert.Equal(
+            ExecutionOutcome.LeaseLost,
+            result.Outcome);
+        Assert.Equal(
+            1,
+            calls);
+    }
+
+    [Fact]
+    public async Task CT164_Execute_When_Lease_Is_Lost_Before_Immediate_Retry_Should_Not_Start_Next_Attempt()
+    {
+        var leaseStore =
+            CreateLeaseStore();
+
+        leaseStore
+            .TryAcquireAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var heartbeatCompletion =
+            new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        var heartbeatService =
+            CreateHeartbeatService();
+
+        heartbeatService
+            .RunAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<JobExecutionOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ => heartbeatCompletion.Task);
+
+        var coordinator =
+            new JobExecutionCoordinator(
+                leaseStore,
+                heartbeatService,
+                new RetryScheduledLogger(
+                    () => heartbeatCompletion.TrySetResult(false)));
+        var calls = 0;
+
+        var result =
+            await coordinator.ExecuteAsync(
+                TestData.CreateExecution("owner-a"),
+                TestData.CreateOptions() with
+                {
+                    MaxAttempts = 3,
+                    RetryDelay = TimeSpan.Zero
+                },
+                _ =>
+                {
+                    Interlocked.Increment(ref calls);
+                    throw new InvalidOperationException(
+                        "Transient callback failure.");
+                });
+
+        Assert.Equal(
+            ExecutionOutcome.LeaseLost,
+            result.Outcome);
+        Assert.Equal(
+            1,
+            calls);
+    }
+
+    [Fact]
+    public async Task CT165_Execute_When_Retry_Options_Are_Invalid_Should_Throw_Before_Acquiring_Lease()
+    {
+        var leaseStore =
+            CreateLeaseStore();
+        var coordinator =
+            new JobExecutionCoordinator(
+                leaseStore,
+                CreateHeartbeatService());
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => coordinator.ExecuteAsync(
+                TestData.CreateExecution("owner-a"),
+                TestData.CreateOptions() with
+                {
+                    MaxAttempts = 11
+                },
+                _ => Task.CompletedTask));
+
+        await leaseStore
+            .DidNotReceive()
+            .TryAcquireAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>());
+    }
+
+    private sealed class RetryScheduledLogger
+        : ILogger<JobExecutionCoordinator>
+    {
+        private readonly Action _onWarning;
+
+        public RetryScheduledLogger(
+            Action onWarning)
+        {
+            _onWarning = onWarning;
+        }
+
+        public IDisposable? BeginScope<TState>(
+            TState state)
+            where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(
+            LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Warning)
+            {
+                _onWarning();
+            }
+        }
     }
 }

@@ -13,6 +13,63 @@ namespace JobGuardian.Core.Tests.DependencyInjection;
 public sealed class ExecutionStateFlowTests
 {
     [Fact]
+    public async Task CT931_Retry_Success_Should_Apply_Failure_Policy_Only_To_Final_Outcome()
+    {
+        var services =
+            new ServiceCollection();
+
+        services.AddLogging();
+        services.AddSingleton<ExecutionCounter>();
+        services.AddJobGuardian();
+        services.AddJob<FailOnceJob>(
+            new JobKey(
+                "tenant-a",
+                "billing",
+                "invoice-sync"),
+            new JobExecutionPolicy
+            {
+                LeaseDuration =
+                    TimeSpan.FromMinutes(1),
+                HeartbeatInterval =
+                    TimeSpan.FromSeconds(20),
+                FailurePolicy =
+                    FailurePolicy.RequireManualReset,
+                MaxAttempts =
+                    2,
+                RetryDelay =
+                    TimeSpan.Zero
+            });
+
+        await using var provider =
+            services.BuildServiceProvider();
+
+        var hostedService =
+            provider
+                .GetServices<IHostedService>()
+                .OfType<JobGuardianHostedService>()
+                .Single();
+
+        var stateManager =
+            provider.GetRequiredService<IJobStateManager>();
+        var jobKey =
+            new JobKey(
+                "tenant-a",
+                "billing",
+                "invoice-sync");
+
+        await hostedService.ExecuteJobsAsync(
+            CancellationToken.None);
+
+        Assert.Equal(
+            2,
+            provider.GetRequiredService<ExecutionCounter>().Count);
+        Assert.Equal(
+            JobState.Eligible,
+            await stateManager.GetCurrentStateAsync(
+                jobKey));
+    }
+
+    [Fact]
     public async Task CT920_Failed_Job_Should_Be_Blocked_Until_Reset()
     {
         var services =

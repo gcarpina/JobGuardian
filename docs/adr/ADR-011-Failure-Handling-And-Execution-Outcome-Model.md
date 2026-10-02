@@ -17,15 +17,9 @@ The runtime currently supports:
 - Lease release
 - Distributed ownership enforcement
 - Cooperative cancellation
-- Runtime observability
-
-As the runtime evolves, additional capabilities will be introduced:
-
-- Failure Policies
-- Execution History
-- Execution Auditing
-- Metrics
-- OpenTelemetry Integration
+- Explicit execution outcomes and failure policies
+- Execution history
+- Metrics, traces, and structured runtime logs
 
 These capabilities require a consistent and explicit execution outcome model.
 
@@ -36,7 +30,7 @@ Until now, execution outcomes have been implicitly represented through a combina
 - Cancellation tokens
 - Lease ownership state
 
-This approach is insufficient for future evolution because it does not provide a stable domain language describing the result of an execution attempt.
+This approach is insufficient for future evolution because it does not provide a stable domain language describing the result of a coordinated execution.
 
 ---
 
@@ -105,22 +99,22 @@ Succeeded
 
 ### Failed
 
-Represents execution failure caused by an exception.
+Represents a coordinated execution whose configured callback attempts all ended with an exception.
 
 Conditions:
 
 - Lease ownership acquired
 - Job started
-- Unhandled exception occurred
+- All configured callback attempts ended with an exception
 
 Example:
 
 ```text
 Acquire
 ↓
-Execute
+Execute → Exception
 ↓
-Exception
+Retry → Exception (when configured)
 ↓
 Failed
 ```
@@ -209,15 +203,17 @@ The job was never executed.
 
 ## Relationship With Job State Model
 
-ExecutionOutcome represents the result of a single execution attempt.
+ExecutionOutcome represents the final result of one coordinated execution, which may invoke its
+callback more than once when retries are configured.
 
-ExecutionOutcome is intentionally limited to attempt classification and does not represent the persistent lifecycle state of a job.
+ExecutionOutcome is intentionally limited to coordinated execution classification and does not
+represent the persistent lifecycle state of a job.
 
 Examples:
 
-- `Succeeded` represents a completed execution attempt
-- `Failed` represents a failed execution attempt
-- `Skipped` represents an execution attempt that never started
+- `Succeeded` represents a completed coordinated execution
+- `Failed` represents a coordinated execution whose callback attempts all failed
+- `Skipped` represents a coordinated execution that never started its callback
 
 ExecutionOutcome shall not be interpreted as a durable runtime state.
 
@@ -231,10 +227,11 @@ The Job State Model and ExecutionOutcome serve different purposes:
 
 | Concept | Purpose |
 |----------|----------|
-| ExecutionOutcome | Classification of a single execution attempt |
+| ExecutionOutcome | Classification of one coordinated execution |
 | Job State Model | Persistent lifecycle state of a job over time |
 
-ExecutionOutcome remains focused exclusively on describing how a specific execution attempt terminated.
+ExecutionOutcome remains focused exclusively on describing how a specific coordinated execution
+terminated.
 
 Failure Policies, Execution History, administrative operations and dashboard views may consume
 `ExecutionOutcome` values, but are not represented by `ExecutionOutcome` itself. The current
@@ -277,8 +274,19 @@ ExecutionOutcome does not imply any specific runtime action.
 
 The same outcome may produce different actions depending on the configured Failure Policy.
 
-Retry is not currently implemented. The supported policies determine whether a failure leaves
-the job eligible or blocks it:
+### Bounded Callback Retries
+
+`JobExecutionPolicy.MaxAttempts` configures the maximum callback invocations within one
+coordinated execution. The initial invocation counts as an attempt. The default is one, preserving
+the previous no-retry behavior; values from 1 through 10 are accepted.
+
+After a callback exception, JobGuardian waits the configured fixed `RetryDelay` before another
+invocation. The delay defaults to one second, may be zero, and is limited to five minutes. Retry
+applies only to callback failures. Lease acquisition or release errors are not retried, and
+`Skipped`, `Cancelled`, and `LeaseLost` outcomes do not trigger another callback attempt.
+
+The same lease and heartbeat remain active across callback attempts and retry delays. The
+`FailurePolicy` is applied once to the final coordinated outcome:
 
 ```text
 Outcome       Ignore             RequireManualReset
@@ -286,13 +294,29 @@ Failed        Eligible           Blocked
 LeaseLost     Eligible           Blocked
 ```
 
-Failure Policies evaluate outcomes and determine the supported subsequent runtime behavior.
+An exception does not establish that external side effects were rolled back. A callback may have
+completed a side effect before failing, and JobGuardian may invoke it again. Consumers must make
+retryable work idempotent, use stable business idempotency keys, or deduplicate side effects in the
+system that owns them. Lease ownership prevents concurrent owners while valid; it does not provide
+exactly-once processing for external systems.
+
+The retry delay is fixed, without exponential backoff or jitter. This keeps configuration
+predictable, but large groups of jobs recovering from the same dependency outage may retry in
+bursts. `MaxAttempts` bounds callback invocations, not elapsed execution time; callback duration
+itself is not limited by the retry settings.
+
+Retries are internal to one coordinated execution. Traces contain a child span per callback
+invocation with `jobguardian.execution.callback.attempt`; the runtime logs each scheduled retry and
+increments `jobguardian.execution.retries`. Execution History persists the final outcome once, not
+one record per callback invocation.
+
+Failure Policies evaluate the final outcome and determine subsequent job eligibility.
 
 ---
 
 ## Execution History Integration
 
-Execution history records persist outcomes using `ExecutionOutcome`.
+Execution history records persist the final coordinated outcome using `ExecutionOutcome`.
 
 Example:
 
@@ -308,9 +332,11 @@ History persistence shall not introduce additional outcome categories.
 
 `ExecutionOutcome` remains the single source of truth.
 
-`ExecutionHistory` is responsible for persisting execution attempts over time.
+`ExecutionHistory` is responsible for persisting coordinated execution outcomes over time. Internal
+callback retries do not create separate history records.
 
-ExecutionOutcome classifies a single execution attempt and does not define how historical records are stored, retained, or queried.
+ExecutionOutcome classifies one coordinated execution and does not define how historical records
+are stored, retained, or queried.
 
 The initial .NET implementation has the following boundaries:
 
@@ -440,9 +466,9 @@ Job State integration
 Deferred beyond the MVP:
 
 ```text
-Execution Metrics
+Execution History query APIs and retention automation
 
-OpenTelemetry Integration
+Audit behavior and administrative operations
 ```
 
 All future execution-related capabilities shall build upon the `ExecutionOutcome` model defined in this ADR.
