@@ -46,7 +46,7 @@ public sealed class InMemoryLeaseStore
             if (_leases.TryGetValue(
                     execution.JobKey,
                     out var currentLease)
-                && currentLease.LeaseUntilUtc >= now)
+                && currentLease.LeaseUntilUtc > now)
             {
                 return Task.FromResult(false);
             }
@@ -100,7 +100,7 @@ public sealed class InMemoryLeaseStore
                     jobKey,
                     out var currentLease)
                 || currentLease.ExecutionId != executionId
-                || currentLease.LeaseUntilUtc < now)
+                || currentLease.LeaseUntilUtc <= now)
             {
                 return Task.FromResult(false);
             }
@@ -177,7 +177,7 @@ public sealed class InMemoryLeaseStore
             if (_leases.TryGetValue(
                     jobKey,
                     out var lease)
-                && lease.LeaseUntilUtc >= DateTimeOffset.UtcNow)
+                && lease.LeaseUntilUtc > DateTimeOffset.UtcNow)
             {
                 return Task.FromResult<ActiveLease?>(
                     lease);

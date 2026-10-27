@@ -123,6 +123,9 @@ public sealed class JobExecutionCoordinatorTests
         Assert.Equal(
             ExecutionOutcome.Skipped,
             result.Outcome);
+        Assert.Equal(
+            ExecutionOutcomeReason.LeaseBusy,
+            result.OutcomeReason);
 
         Assert.False(
             jobExecuted);

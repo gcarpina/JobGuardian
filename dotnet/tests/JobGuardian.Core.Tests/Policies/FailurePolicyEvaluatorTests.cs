@@ -137,6 +137,23 @@ public sealed class FailurePolicyEvaluatorTests
     }
 
     [Fact]
+    public void CT545_Cancelled_And_RequireManualReset_Should_Return_Continue()
+    {
+        var evaluator =
+            new FailurePolicyEvaluator();
+
+        var decision =
+            evaluator.Evaluate(
+                new ExecutionResult(
+                    ExecutionOutcome.Cancelled),
+                FailurePolicy.RequireManualReset);
+
+        Assert.Equal(
+            PolicyDecision.Continue,
+            decision);
+    }
+
+    [Fact]
     public void CT550_Skipped_And_RequireManualReset_Should_Return_Continue()
     {
         // Arrange
@@ -159,6 +176,22 @@ public sealed class FailurePolicyEvaluatorTests
 
         Assert.Equal(
             PolicyDecision.Continue,
+            decision);
+    }
+
+    [Fact]
+    public void CT010_Abandoned_And_RequireManualReset_Should_Return_Block()
+    {
+        var evaluator =
+            new FailurePolicyEvaluator();
+
+        var decision =
+            evaluator.Evaluate(
+                new ExecutionResult(ExecutionOutcome.Abandoned),
+                FailurePolicy.RequireManualReset);
+
+        Assert.Equal(
+            PolicyDecision.Block,
             decision);
     }
 }

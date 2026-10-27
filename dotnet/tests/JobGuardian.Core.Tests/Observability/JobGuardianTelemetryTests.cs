@@ -25,7 +25,8 @@ public sealed class JobGuardianTelemetryTests
                     "observability",
                     $"job-{Guid.NewGuid():N}"),
                 ExecutionId = Guid.NewGuid(),
-                OwnerId = "otel-test-owner"
+                OwnerId = "otel-test-owner",
+                CorrelationId = Guid.NewGuid()
             };
 
         var measurements =
@@ -33,6 +34,9 @@ public sealed class JobGuardianTelemetryTests
 
         var activeLeaseValues =
             new ConcurrentBag<long>();
+
+        var metricTagKeys =
+            new ConcurrentBag<string[]>();
 
         using var meterListener =
             new MeterListener
@@ -50,6 +54,8 @@ public sealed class JobGuardianTelemetryTests
         meterListener.SetMeasurementEventCallback<long>(
             (instrument, measurementValue, tags, _) =>
             {
+                metricTagKeys.Add(
+                    GetTagKeys(tags));
                 measurements.Add(
                     (
                         instrument.Name,
@@ -66,6 +72,8 @@ public sealed class JobGuardianTelemetryTests
         meterListener.SetMeasurementEventCallback<double>(
             (instrument, _, tags, _) =>
             {
+                metricTagKeys.Add(
+                    GetTagKeys(tags));
                 measurements.Add(
                     (
                         instrument.Name,
@@ -77,7 +85,11 @@ public sealed class JobGuardianTelemetryTests
         meterListener.Start();
 
         var activities =
-            new ConcurrentBag<(string Name, string? JobName)>();
+            new ConcurrentBag<(
+                string Name,
+                string? JobName,
+                string? ParentId,
+                string? CorrelationId)>();
 
         using var activityListener =
             new ActivityListener
@@ -97,7 +109,10 @@ public sealed class JobGuardianTelemetryTests
                             (
                                 activity.OperationName,
                                 activity.GetTagItem(
-                                    "jobguardian.job.name")?.ToString()));
+                                    "jobguardian.job.name")?.ToString(),
+                                activity.ParentId,
+                                activity.GetTagItem(
+                                    "jobguardian.correlation.id")?.ToString()));
                     }
                 }
             };
@@ -133,6 +148,9 @@ public sealed class JobGuardianTelemetryTests
                 LeaseDuration = TimeSpan.FromSeconds(30),
                 HeartbeatInterval = TimeSpan.FromMilliseconds(5)
             };
+
+        using var hostActivity =
+            new Activity("Host.Operation").Start();
 
         var result =
             await coordinator.ExecuteAsync(
@@ -197,6 +215,12 @@ public sealed class JobGuardianTelemetryTests
         Assert.Contains(
             activities,
             activity =>
+                activity.Name == "JobGuardian.ExecutionAttempt"
+                && activity.ParentId == hostActivity.Id
+                && activity.CorrelationId == execution.CorrelationId.ToString());
+        Assert.Contains(
+            activities,
+            activity =>
                 activity.Name == "JobGuardian.AcquireLease");
         Assert.Contains(
             activities,
@@ -216,6 +240,20 @@ public sealed class JobGuardianTelemetryTests
                 Assert.Equal(
                     execution.JobKey.JobName,
                     activity.JobName));
+        Assert.All(
+            metricTagKeys.SelectMany(keys => keys),
+            key => Assert.DoesNotContain(
+                key,
+                new[]
+                {
+                    "tenant.id",
+                    "job.id",
+                    "job.name",
+                    "job.namespace",
+                    "execution.id",
+                    "correlation.id",
+                    "error.message"
+                }));
     }
 
     private static string? GetTag(
@@ -231,5 +269,18 @@ public sealed class JobGuardianTelemetryTests
         }
 
         return null;
+    }
+
+    private static string[] GetTagKeys(
+        ReadOnlySpan<KeyValuePair<string, object?>> tags)
+    {
+        var keys = new string[tags.Length];
+
+        for (var index = 0; index < tags.Length; index++)
+        {
+            keys[index] = tags[index].Key;
+        }
+
+        return keys;
     }
 }

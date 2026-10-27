@@ -79,6 +79,9 @@ internal static class JobGuardianTelemetry
         activity?.SetTag(
             "jobguardian.execution.id",
             execution.ExecutionId);
+        activity?.SetTag(
+            "jobguardian.correlation.id",
+            execution.CorrelationId);
 
         return activity;
     }

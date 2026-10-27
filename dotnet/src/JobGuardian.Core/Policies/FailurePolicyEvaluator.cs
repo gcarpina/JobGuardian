@@ -52,6 +52,9 @@ public sealed class FailurePolicyEvaluator
             ExecutionOutcome.LeaseLost =>
                 PolicyDecision.Block,
 
+            ExecutionOutcome.Abandoned =>
+                PolicyDecision.Block,
+
             ExecutionOutcome.Succeeded =>
                 PolicyDecision.Continue,
 

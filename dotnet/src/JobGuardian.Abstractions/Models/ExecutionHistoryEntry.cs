@@ -68,6 +68,11 @@ public sealed record ExecutionHistoryEntry
     public required DateTimeOffset StartedAtUtc { get; init; }
 
     /// <summary>
+    /// Gets the UTC time at which the execution acquired its lease, when it acquired one.
+    /// </summary>
+    public DateTimeOffset? LeaseAcquiredAtUtc { get; init; }
+
+    /// <summary>
     /// Gets the UTC timestamp when the execution ended, when available.
     /// </summary>
     public DateTimeOffset? EndedAtUtc { get; init; }
@@ -76,6 +81,11 @@ public sealed record ExecutionHistoryEntry
     /// Gets the final execution outcome, when available.
     /// </summary>
     public ExecutionOutcome? Outcome { get; init; }
+
+    /// <summary>
+    /// Gets the stable reason code associated with the outcome, when applicable.
+    /// </summary>
+    public ExecutionOutcomeReason? OutcomeReason { get; init; }
 
     /// <summary>
     /// Gets the failure category, when the execution failed.

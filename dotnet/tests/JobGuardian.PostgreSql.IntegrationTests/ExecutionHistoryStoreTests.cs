@@ -123,6 +123,120 @@ public sealed class ExecutionHistoryStoreTests
     }
 
     [Fact]
+    public async Task CT030_Query_Should_Filter_By_Tenant_Job_Time_And_Outcome_With_Pagination()
+    {
+        await Fixture.ResetDatabaseAsync();
+
+        var store =
+            CreateExecutionHistoryStore();
+        var baseTime =
+            DateTimeOffset.UtcNow.AddMinutes(-10);
+        var entries =
+            new[]
+            {
+                CreateHistoryEntry(Guid.NewGuid(), TenantId, baseTime, ExecutionOutcome.Succeeded),
+                CreateHistoryEntry(Guid.NewGuid(), TenantId, baseTime.AddMinutes(1), ExecutionOutcome.Failed),
+                CreateHistoryEntry(Guid.NewGuid(), TenantId, baseTime.AddMinutes(2), ExecutionOutcome.Succeeded),
+                CreateHistoryEntry(Guid.NewGuid(), "other-tenant", baseTime.AddMinutes(3), ExecutionOutcome.Succeeded)
+            };
+
+        foreach (var entry in entries)
+        {
+            await store.CreateAsync(entry);
+            await store.UpdateAsync(entry);
+        }
+
+        var page =
+            await store.QueryAsync(
+                new ExecutionHistoryQuery
+                {
+                    JobKey = new JobKey(TenantId, JobNamespace, JobName),
+                    StartedFromUtc = baseTime,
+                    StartedBeforeUtc = baseTime.AddMinutes(3),
+                    Outcome = ExecutionOutcome.Succeeded,
+                    Page = 1,
+                    PageSize = 1
+                });
+
+        Assert.Equal(2, page.TotalCount);
+        Assert.Single(page.Items);
+        Assert.Equal(entries[2].ExecutionId, page.Items[0].ExecutionId);
+        Assert.Equal(1, page.Page);
+        Assert.Equal(1, page.PageSize);
+    }
+
+    [Fact]
+    public async Task CT038_Recovery_Should_Abandon_Only_Previously_Acquired_Incomplete_History()
+    {
+        await Fixture.ResetDatabaseAsync();
+
+        var store =
+            CreateExecutionHistoryStore();
+        var acquiredIncomplete =
+            CreateHistoryEntry(
+                Guid.NewGuid(),
+                TenantId,
+                DateTimeOffset.UtcNow.AddMinutes(-5),
+                null);
+        var neverAcquired =
+            CreateHistoryEntry(
+                Guid.NewGuid(),
+                TenantId,
+                DateTimeOffset.UtcNow.AddMinutes(-4),
+                null);
+        var current =
+            CreateHistoryEntry(
+                Guid.NewGuid(),
+                TenantId,
+                DateTimeOffset.UtcNow,
+                null);
+
+        await store.CreateAsync(acquiredIncomplete);
+        await store.CreateAsync(neverAcquired);
+        await store.CreateAsync(current);
+        await store.MarkLeaseAcquiredAsync(acquiredIncomplete.ExecutionId);
+        await store.MarkLeaseAcquiredAsync(current.ExecutionId);
+
+        var recovered =
+            await store.MarkPreviousIncompleteAsAbandonedAsync(
+                current.JobKey,
+                current.ExecutionId,
+                DateTimeOffset.UtcNow);
+
+        var recoveredEntry =
+            await store.GetAsync(acquiredIncomplete.ExecutionId);
+        var untouchedEntry =
+            await store.GetAsync(neverAcquired.ExecutionId);
+        var currentEntry =
+            await store.GetAsync(current.ExecutionId);
+
+        Assert.Equal(1, recovered);
+        Assert.Equal(ExecutionOutcome.Abandoned, recoveredEntry?.Outcome);
+        Assert.Equal(
+            ExecutionOutcomeReason.LeaseExpiredWithoutOutcome,
+            recoveredEntry?.OutcomeReason);
+        Assert.Null(untouchedEntry?.Outcome);
+        Assert.Null(currentEntry?.Outcome);
+    }
+
+    [Fact]
+    public async Task CT032_Query_Should_Reject_Invalid_Pagination()
+    {
+        var store =
+            CreateExecutionHistoryStore();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => store.QueryAsync(
+                new ExecutionHistoryQuery
+                {
+                    JobKey = new JobKey(TenantId, JobNamespace, JobName),
+                    StartedFromUtc = DateTimeOffset.UtcNow.AddDays(-1),
+                    StartedBeforeUtc = DateTimeOffset.UtcNow,
+                    PageSize = 101
+                }));
+    }
+
+    [Fact]
     public async Task CT1120_Update_Missing_Execution_Should_Throw()
     {
         await Fixture.ResetDatabaseAsync();
@@ -161,6 +275,8 @@ public sealed class ExecutionHistoryStoreTests
 
         var signal =
             new ExecutionSignal();
+        var correlationId =
+            Guid.NewGuid();
 
         var jobKey =
             new JobKey(
@@ -174,6 +290,8 @@ public sealed class ExecutionHistoryStoreTests
                     services =>
                     {
                         services.AddSingleton(signal);
+                        services.AddSingleton<IExecutionCorrelationIdProvider>(
+                            new StaticCorrelationIdProvider(correlationId));
                         services
                             .AddJobGuardian()
                             .UsePostgreSql(
@@ -231,6 +349,8 @@ public sealed class ExecutionHistoryStoreTests
             history.Outcome);
         Assert.NotNull(history.EndedAtUtc);
         Assert.Equal(jobKey, history.JobKey);
+        Assert.Equal(correlationId, history.CorrelationId);
+        Assert.NotNull(history.LeaseAcquiredAtUtc);
         Assert.Equal("Production", history.Environment);
         Assert.False(
             string.IsNullOrWhiteSpace(
@@ -276,10 +396,55 @@ public sealed class ExecutionHistoryStoreTests
             : null;
     }
 
+    private ExecutionHistoryEntry CreateHistoryEntry(
+        Guid executionId,
+        string tenantId,
+        DateTimeOffset startedAtUtc,
+        ExecutionOutcome? outcome)
+    {
+        return new ExecutionHistoryEntry
+        {
+            ExecutionId = executionId,
+            JobKey = new JobKey(
+                tenantId,
+                JobNamespace,
+                JobName),
+            CorrelationId = Guid.NewGuid(),
+            ProtocolVersion = "1.0",
+            SchemaVersion = "2.0",
+            ApplicationName = "JobGuardian.IntegrationTests",
+            Environment = "Test",
+            OwnerId = "test-node",
+            StartedAtUtc = startedAtUtc,
+            EndedAtUtc = outcome is null
+                ? null
+                : startedAtUtc.AddSeconds(1),
+            Outcome = outcome,
+            RunType = RunType.Scheduled,
+            TriggeredBy = TriggeredBy.Scheduler
+        };
+    }
+
     private sealed class ExecutionSignal
     {
         public TaskCompletionSource Completed { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private sealed class StaticCorrelationIdProvider
+        : IExecutionCorrelationIdProvider
+    {
+        private readonly Guid _correlationId;
+
+        public StaticCorrelationIdProvider(Guid correlationId)
+        {
+            _correlationId = correlationId;
+        }
+
+        public Guid? GetCorrelationId(JobKey jobKey)
+        {
+            return _correlationId;
+        }
     }
 
     private sealed class SignalingJob

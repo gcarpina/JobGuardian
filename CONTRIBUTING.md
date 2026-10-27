@@ -59,4 +59,14 @@ should be documented through a new ADR.
 All tests must pass before submission.
 
 ```bash
-dotnet test
+dotnet test dotnet/JobGuardian.sln \
+  --configuration Release \
+  --collect:"XPlat Code Coverage" \
+  --results-directory ./artifacts/coverage
+python3 scripts/check-coverage.py ./artifacts/coverage --threshold 80
+```
+
+CI requires line coverage strictly above 80% for each production package. It also requires branch
+coverage strictly above 80% for packages containing conditional branches. Line coverage is
+aggregated across test projects and both supported target frameworks; branch coverage uses the
+highest observed coverage for each source decision across those reports.

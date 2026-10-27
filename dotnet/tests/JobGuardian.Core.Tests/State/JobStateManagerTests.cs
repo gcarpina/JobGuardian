@@ -311,6 +311,43 @@ public sealed class JobStateManagerTests
                 Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task CT022_BlockedSkipAfterAbandonment_Should_Persist_ManualReset_State()
+    {
+        var repository =
+            Substitute.For<IJobStateRepository>();
+        repository
+            .GetAsync(
+                Arg.Any<JobKey>(),
+                Arg.Any<CancellationToken>())
+            .Returns((JobState?)null);
+
+        var manager =
+            new JobStateManager(
+                new FailurePolicyEvaluator(),
+                new JobStateTransitionEngine(),
+                repository);
+        var jobKey =
+            new JobKey(
+                "tenant-a",
+                "billing",
+                "invoice-sync");
+
+        await manager.HandleExecutionResultAsync(
+            jobKey,
+            FailurePolicy.RequireManualReset,
+            new ExecutionResult(
+                ExecutionOutcome.Skipped)
+            {
+                OutcomeReason = ExecutionOutcomeReason.Blocked
+            });
+
+        await repository.Received(1).SetAsync(
+            jobKey,
+            JobState.Blocked,
+            Arg.Any<CancellationToken>());
+    }
+
     private static JobStateManager CreateManager(
         IJobStateRepository repository)
     {
