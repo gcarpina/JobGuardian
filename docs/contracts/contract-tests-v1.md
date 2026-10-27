@@ -2,557 +2,95 @@
 
 Version: 1.0
 
-Status: Draft
-
----
-
-# Purpose
-
-This document defines the mandatory contract tests that every JobGuardian SDK implementation must pass.
-
-Examples:
-
-- .NET SDK
-- Java SDK
-- Python SDK
-
-Contract tests verify protocol compliance independently of implementation details.
-
----
-
-# Contract Test Index
-
-| ID | Name |
-|----|------|
-| CT001 | Acquire Free Job |
-| CT002 | Acquire Busy Job |
-| CT003 | Renew Lease |
-| CT004 | Acquire Expired Lease |
-| CT005 | Concurrent Acquisition |
-| CT006 | Release Execution |
-| CT007 | Failed Execution |
-| CT008 | Lease Expiration Recovery |
-| CT009 | Failure Policy Ignore |
-| CT010 | Failure Policy RequireManualReset |
-| CT011 | Manual Reset |
-| CT012 | Audit Logging |
-| CT013 | Tenant Isolation |
-| CT014 | Correlation Tracking |
-| CT015 | Database Time Authority |
-| CT016 | Renew Active Lease |
-| CT017 | Renew Lost Lease |
-
----
-
-# CT001 - Acquire Free Job
-
-## Scenario
-
-No active execution exists.
-
-## Given
-
-No row exists in:
-
-jobguardian_active_executions
-
-for:
-
-tenant_id = default
-job_namespace = finance
-job_name = nightly-import
-
-## When
-
-An owner attempts to acquire the job.
-
-## Then
-
-Acquire succeeds.
-
-A row is created in:
-
-jobguardian_active_executions
-
-A row is created in:
-
-jobguardian_execution_history
-
-## Expected Result
-
-Success
-
----
-
-# CT002 - Acquire Busy Job
-
-## Scenario
-
-A valid lease already exists.
-
-## Given
-
-An active execution exists.
-
-Lease has not expired.
-
-## When
-
-A second owner attempts acquisition.
-
-## Then
-
-Acquire fails.
-
-No ownership change occurs.
-
-No additional active execution is created.
-
-## Expected Result
-
-Failure
-
----
-
-# CT003 - Renew Lease
-
-## Scenario
-
-Owner successfully renews an active lease.
-
-## Given
-
-An active execution exists.
-
-## When
-
-Heartbeat is executed.
-
-## Then
-
-renewed_at_utc is updated.
-
-lease_until_utc is extended.
-
-Ownership remains unchanged.
-
-## Expected Result
-
-Success
-
----
-
-# CT004 - Acquire Expired Lease
-
-## Scenario
-
-Existing lease has expired.
-
-## Given
-
-A lease exists.
-
-lease_until_utc is older than current database UTC time.
-
-## When
-
-Another owner attempts acquisition.
-
-## Then
-
-Acquire succeeds.
-
-New owner becomes active owner.
-
-A new execution history record is created.
-
-## Expected Result
-
-Success
-
----
-
-# CT005 - Concurrent Acquisition
-
-## Scenario
-
-Multiple owners compete simultaneously.
-
-## Given
-
-No active execution exists.
-
-## When
-
-10 owners attempt acquisition concurrently.
-
-## Then
-
-Exactly one owner succeeds.
-
-All other owners fail.
-
-Only one active execution row exists.
-
-## Expected Result
-
-Single Winner
-
----
-
-# CT006 - Release Execution
-
-## Scenario
-
-Job completes successfully.
-
-## Given
-
-An active execution exists.
-
-## When
-
-Release is called with outcome:
-
-Success
-
-## Then
-
-The active execution row is removed.
-
-The execution history row is updated.
-
-## Expected Result
-
-Success
-
----
-
-# CT007 - Failed Execution
-
-## Scenario
-
-Job terminates with failure.
-
-## Given
-
-An active execution exists.
-
-## When
-
-Release is called with outcome:
-
-Failed
-
-## Then
-
-The active execution row is removed.
-
-The execution history row is updated.
-
-Failure information is persisted.
-
-## Expected Result
-
-Success
-
----
-
-# CT008 - Lease Expiration Recovery
-
-## Scenario
-
-Owner disappears unexpectedly.
-
-## Given
-
-An active execution exists.
-
-Heartbeat stops.
-
-## When
-
-Lease expires.
-
-## Then
-
-The execution is classified as:
-
-Abandoned
-
-A new owner may acquire the same job.
-
-## Expected Result
-
-Success
-
----
-
-# CT009 - Failure Policy Ignore
-
-## Scenario
-
-FailurePolicy = Ignore
-
-## Given
-
-A previous execution failed.
-
-## When
-
-The next scheduled execution starts.
-
-## Then
-
-Execution is allowed.
-
-Acquire succeeds.
-
-## Expected Result
-
-Success
-
----
-
-# CT010 - Failure Policy RequireManualReset
-
-## Scenario
-
-FailurePolicy = RequireManualReset
-
-## Given
-
-A previous execution failed.
-
-## When
-
-The next scheduled execution starts.
-
-## Then
-
-Execution is blocked.
-
-No acquisition occurs.
-
-The execution is marked as:
-
-Skipped
-
-## Expected Result
-
-Blocked
-
----
-
-# CT011 - Manual Reset
-
-## Scenario
-
-Operator resets a blocked job.
-
-## Given
-
-A job is blocked by:
-
-RequireManualReset
-
-## When
-
-ResetFailureState is executed.
-
-## Then
-
-The job becomes eligible for execution again.
-
-An audit record is created.
-
-## Expected Result
-
-Success
-
----
-
-# CT012 - Audit Logging
-
-## Scenario
-
-Operator performs an administrative action.
-
-## Given
-
-An authenticated operator exists.
-
-## When
-
-One of the following actions is executed:
-
-RunNow
-ResetFailureState
-ForceReleaseLease
-ForceTakeoverLease
-
-## Then
-
-An audit row is written.
-
-Required fields:
-
-tenant_id
-user_id
-user_name
-action
-timestamp_utc
-
-## Expected Result
-
-Success
-
----
-
-# CT013 - Tenant Isolation
-
-## Scenario
-
-Identical job identities exist in different tenants.
-
-## Given
-
-Tenant A:
-
-tenant-a/finance/nightly-import
-
-Tenant B:
-
-tenant-b/finance/nightly-import
-
-## When
-
-Both jobs acquire execution simultaneously.
-
-## Then
-
-Both acquisitions succeed.
-
-No interference occurs between tenants.
-
-## Expected Result
-
-Success
-
----
-
-# CT014 - Correlation Tracking
-
-## Scenario
-
-Execution includes tracing information.
-
-## Given
-
-An execution starts.
-
-## When
-
-History is written.
-
-## Then
-
-The following fields are persisted:
-
-correlation_id
-
-conversation_id
-
-## Expected Result
-
-Success
-
----
-
-# CT015 - Database Time Authority
-
-## Scenario
-
-Nodes have inconsistent local clocks.
-
-## Given
-
-Node A is +30 seconds.
-
-Node B is -30 seconds.
-
-Compared to actual time.
-
-## When
-
-Lease acquisition and expiration decisions are performed.
-
-## Then
-
-Only database UTC time is used.
-
-Local clock differences do not affect correctness.
-
-## Expected Result
-
-Success
-
----
-
-# Compliance
-
-An SDK implementation is considered compliant with JobGuardian Protocol v1 only if all contract tests defined in this document pass successfully.
-
-# CT016 - Renew Active Lease
-
-## Scenario
-
-Owner successfully renews a valid lease.
-
-## Given
-
-An active execution exists.
-
-Lease has not expired.
-
-## When
-
-Heartbeat renewal is executed.
-
-## Then
-
-Renew succeeds.
-
-lease_until_utc is extended.
-
-Ownership remains unchanged.
-
-## Expected Result
-
-Success
-
-# CT017 - Renew Lost Lease
-
-## Scenario
-
-Owner attempts to renew a lease that is no longer owned.
-
-## Given
-
-A lease existed.
-
-Ownership has already been transferred.
-
-## When
-
-Original owner executes Renew.
-
-## Then
-
-Renew fails.
-
-Ownership remains unchanged.
-
-## Expected Result
-
-Failure
+Status: Ratified
+
+## Purpose and applicability
+
+These tests define observable Protocol v1 behavior independent of SDK-specific API names. A
+conformance suite must run against each supported persistence provider and SDK implementation.
+For the JobGuardian 1.0 release, only .NET 8/.NET 10 with PostgreSQL is declared conformant.
+In-memory tests provide single-process behavioral coverage, not distributed-provider conformance.
+
+Each persistence test starts from an isolated database state. Time-boundary tests use a provider
+test clock or controlled SQL timestamps; they must not rely on arbitrary sleeps. History writes are
+best-effort for runtime execution, but direct history-store operations must return their defined
+errors.
+
+## Lease and identity contracts
+
+| ID | Scenario | Required observable result |
+|---|---|---|
+| CT001 | Acquire a free tenant/job identity | Acquisition succeeds and exactly one active owner exists |
+| CT002 | Acquire a job with an unexpired lease | Second acquisition fails without changing ownership |
+| CT003 | Renew a lease owned by the current execution before expiry | Renewal succeeds and extends the lease using database time |
+| CT004 | Acquire when the previous lease has expired | New owner succeeds; old owner cannot renew |
+| CT005 | Ten concurrent acquisitions for one identity | Exactly one owner succeeds |
+| CT013 | Same namespace/name in two tenants | Both tenants acquire independently |
+| CT015 | Client clocks are skewed | Lease decisions remain determined by database time |
+| CT016 | Renew a valid active lease | Renewal succeeds and retains ownership |
+| CT017 | Renew after ownership transfer | Renewal fails and does not change the new owner |
+| CT018 | `lease_until_utc` equals database time | Lease is expired; acquisition may transfer and renewal is rejected |
+| CT019 | `heartbeat_interval >= lease_duration`, or either value is non-positive | Registration/execution validation fails before callback invocation |
+
+## Execution outcome and failure-policy contracts
+
+| ID | Scenario | Required observable result |
+|---|---|---|
+| CT006 | Callback succeeds | `Succeeded` is terminal, history is completed when available, and lease is released |
+| CT007 | All callback attempts throw | `Failed` is terminal and includes failure category/context according to provider policy |
+| CT008 | Prior acquired execution has no persisted terminal outcome; a later owner acquires after expiry | Prior history is updated to terminal `Abandoned`; recovery does not claim the process is dead |
+| CT009 | `FailurePolicy = Ignore` after a failure | The next attempt remains eligible |
+| CT010 | `RequireManualReset` after `Failed`, `LeaseLost`, or `Abandoned` | Subsequent attempt is blocked as `Skipped`/`Blocked` until programmatic reset |
+| CT011 | Programmatic reset of blocked state | Job becomes eligible; authentication/audit are outside the SDK contract |
+| CT020 | Cancellation during callback or shutdown | `Cancelled`; no further callback retry occurs |
+| CT021 | Heartbeat cannot renew/confirm ownership | Callback is cooperatively cancelled; final result is `LeaseLost`; no retry occurs |
+| CT022 | Busy lease versus blocked job | Both are `Skipped`, with distinct reasons `LeaseBusy` and `Blocked`; callback is not invoked |
+| CT023 | `Cancelled` or `Skipped` under `RequireManualReset` | Neither outcome blocks later execution |
+
+## Retry contracts
+
+| ID | Scenario | Required observable result |
+|---|---|---|
+| CT024 | Default retry settings | Callback runs once (`max_attempts = 1`) |
+| CT025 | Callback throws and attempts remain | Another invocation uses the same execution ID, correlation ID, and lease |
+| CT026 | Attempt limit reached | Exactly `max_attempts` callback invocations occur; final outcome is `Failed` |
+| CT027 | Retry boundaries | Attempts outside 1–10 or fixed delay outside 0–5 minutes are rejected before execution |
+| CT028 | Cancellation or lease loss while a retry delay is pending | No next callback invocation occurs |
+| CT029 | Retryable callback has an external side effect | Documentation states callers must provide idempotency/deduplication; exactly-once is not claimed |
+
+## History, recovery, and correlation contracts
+
+| ID | Scenario | Required observable result |
+|---|---|---|
+| CT030 | Query history for one tenant/job and bounded time range | Only the matching job and `[started_from, started_before)` entries are returned |
+| CT031 | Query by outcome and page | Filter is applied; page size 1–100 and one-based page are enforced; ordering is deterministic |
+| CT032 | Query with invalid job identity, empty/reversed time range, or invalid paging | Query is rejected without issuing an unbounded query |
+| CT033 | Two tenants use identical job names | History query for one tenant never returns the other tenant's entries |
+| CT034 | Host supplies a correlation ID | ID is persisted and remains stable across all callback retries |
+| CT035 | Host does not supply a correlation ID | SDK generates one and persists the same ID for the coordinated execution |
+| CT036 | A trace parent exists | JobGuardian execution Activity uses the current Activity context as its parent |
+| CT037 | History create/update fails | Callback behavior and final outcome are not replaced; the persistence error is logged |
+| CT038 | Recovery cannot persist `Abandoned` | New owner proceeds; failure is reported and entry remains eligible for later recovery |
+| CT039 | History retention | SDK performs no automatic deletion; consumer/operator owns and documents retention |
+
+## Observability and scope contracts
+
+| ID | Scenario | Required observable result |
+|---|---|---|
+| CT040 | Host listens to JobGuardian ActivitySource and Meter | Execution traces and documented metrics are observable |
+| CT041 | Metric labels are inspected | No tenant/job/execution/correlation IDs or error messages appear as metric attributes |
+| CT042 | No telemetry exporter is configured by host | JobGuardian opens no telemetry endpoint and sends no telemetry independently |
+| CT043 | Audit, OIDC/RBAC, dashboard, manual-run, or force-takeover capability is requested | These are not represented as SDK 1.0 capabilities |
+| CT044 | SDK conformance is declared | Claim is backed by an implementation and passing tests; .NET is the only 1.0 conformant SDK |
+
+## Existing v1 contract scenarios retained
+
+CT001–CT017 from earlier draft revisions are retained where their intent is represented above.
+Draft CT012 Audit Logging is explicitly outside the SDK conformance suite; an application that
+exposes administrative operations is responsible for authentication, authorization, and audit.
+
+## Conformance result
+
+An implementation conforms only when all applicable tests pass for each advertised target
+framework and provider. A test marked not applicable must have an explicit protocol boundary
+rationale; it must not be silently omitted from a claimed conformance report.

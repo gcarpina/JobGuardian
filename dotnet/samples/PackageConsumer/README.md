@@ -39,6 +39,7 @@ under `artifacts/nuget-cache`, so the schema path is:
 
 ```text
 artifacts/nuget-cache/jobguardian.postgresql/<package-version>/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql
+artifacts/nuget-cache/jobguardian.postgresql/<package-version>/contentFiles/any/any/sql/postgresql/V002_execution_history_query_and_recovery.sql
 ```
 
 To apply it to a new database from the repository root, set `DATABASE_URL` to the intended
@@ -54,9 +55,22 @@ psql "$DATABASE_URL" \
   -f "$SCHEMA_PATH"
 ```
 
+For a new database, run the V001 command above, then apply V002:
+
+```sh
+SCHEMA_V2_PATH=$(find artifacts/nuget-cache/jobguardian.postgresql \
+  -type f \
+  -path '*/contentFiles/any/any/sql/postgresql/V002_execution_history_query_and_recovery.sql' \
+  -print -quit)
+test -n "$SCHEMA_V2_PATH"
+psql "$DATABASE_URL" -f "$SCHEMA_V2_PATH"
+```
+
+For an existing schema v1 database, apply only V002 before upgrading the application.
+
 For a normal consumer restore, NuGet uses the global packages folder. Find its location with
 `dotnet nuget locals global-packages --list`; append
-`jobguardian.postgresql/<package-version>/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql`
+`jobguardian.postgresql/<package-version>/contentFiles/any/any/sql/postgresql/`
 to that folder. The default on Linux and macOS is `~/.nuget/packages`; on Windows it is
 `%USERPROFILE%\.nuget\packages`. A custom `NUGET_PACKAGES` setting or `globalPackagesFolder`
 configuration changes this location.

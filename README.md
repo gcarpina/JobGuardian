@@ -199,6 +199,8 @@ services.AddJob<InvoiceSynchronizationJob>(
 ## Protocol
 
 - docs/protocol/protocol-v1.md
+- [1.0 contract gap assessment](./docs/V1-CONTRACT-GAP-ASSESSMENT.md)
+- [ADR-015: 1.0 contract ratification](./docs/adr/ADR-015-JobGuardian-1.0-Contract-Ratification.md)
 
 ## Contract Tests
 
@@ -210,6 +212,7 @@ services.AddJob<InvoiceSynchronizationJob>(
 
 Key ADRs:
 
+- ADR-015 JobGuardian 1.0 Contract Ratification
 - ADR-006 Runtime Architecture
 - ADR-011 Failure Handling and Execution Outcome Model
 - ADR-012 Job State Model
@@ -224,6 +227,10 @@ The MVP implementation is feature-complete for the current preview scope. This d
 that version 1.0 has been released or that the public API is stable. See the
 [MVP exit criteria](./docs/MVP-EXIT-CRITERIA.md) and [changelog](./CHANGELOG.md).
 
+JobGuardian continues compiling and testing .NET 8 for now, but does not promise fixes after
+Microsoft's end-of-support date. Removing .NET 8 from builds and tests requires a prior product
+decision; see the [framework support policy](./docs/protocol/protocol-v1.md#9-versioning-security-and-support).
+
 Current MVP capabilities:
 
 - distributed lease coordination
@@ -236,12 +243,16 @@ Current MVP capabilities:
 - InMemory provider
 - PostgreSQL provider
 - fluent provider registration
+- paginated PostgreSQL execution-history queries and lease-expiry recovery classification
 
 Current automated test coverage:
 
 ```text
-106 passing tests
+148 test cases per target framework
 ```
+
+CI also enforces line coverage above 80% for each production package and branch coverage above 80%
+where conditional branches are present. See [contributor testing guidance](./CONTRIBUTING.md).
 
 ---
 

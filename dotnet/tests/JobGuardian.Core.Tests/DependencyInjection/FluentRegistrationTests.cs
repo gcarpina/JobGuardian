@@ -3,6 +3,8 @@ using JobGuardian.Core.Hosting;
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using JobGuardian.Core.Models;
+using JobGuardian.Core.Tests.TestKit;
 
 namespace JobGuardian.Core.Tests.DependencyInjection;
 
@@ -73,5 +75,29 @@ public sealed class FluentRegistrationTests
             descriptor =>
                 descriptor.ServiceType
                 == typeof(object));
+    }
+
+    [Theory]
+    [InlineData(30, 30)]
+    [InlineData(0, 5)]
+    [InlineData(30, 0)]
+    public void CT019_AddJob_Should_Reject_Invalid_Lease_And_Heartbeat_Settings(
+        int leaseSeconds,
+        int heartbeatSeconds)
+    {
+        var services =
+            new ServiceCollection();
+
+        Assert.ThrowsAny<ArgumentException>(
+            () => services.AddJob<DummyJob>(
+                new JobGuardian.Abstractions.Models.JobKey(
+                    "tenant-a",
+                    "tests",
+                    "invalid-lease"),
+                new JobExecutionPolicy
+                {
+                    LeaseDuration = TimeSpan.FromSeconds(leaseSeconds),
+                    HeartbeatInterval = TimeSpan.FromSeconds(heartbeatSeconds)
+                }));
     }
 }

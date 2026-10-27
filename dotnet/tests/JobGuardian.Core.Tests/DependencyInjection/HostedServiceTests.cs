@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using JobGuardian.Abstractions.Enums;
 using JobGuardian.Core.State;
+using JobGuardian.Core.LeaseStore;
 
 namespace JobGuardian.Core.Tests.DependencyInjection;
 
@@ -213,6 +214,7 @@ public sealed class HostedServiceTests
                 entry =>
                     entry.JobKey.JobName == nameof(DummyJob)
                     && entry.Outcome == null
+                    && entry.CorrelationId != null
                     && entry.EndedAtUtc == null),
             Arg.Any<CancellationToken>());
 
@@ -243,6 +245,7 @@ public sealed class HostedServiceTests
 
         var context =
             new HostedServiceBuilder()
+                .WithFailurePolicy(FailurePolicy.RequireManualReset)
                 .AddJob<DummyJob>()
                 .WithExecutionHistoryStore(historyStore)
                 .Build();
@@ -269,6 +272,81 @@ public sealed class HostedServiceTests
                 Arg.Any<JobExecutionOptions>(),
                 Arg.Any<Func<CancellationToken, Task>>(),
                 Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CT022_HostedService_Should_Record_Blocked_Skips_With_Reason()
+    {
+        var historyStore =
+            Substitute.For<IExecutionHistoryStore>();
+        var context =
+            new HostedServiceBuilder()
+                .WithJobState(JobState.Blocked)
+                .AddJob<DummyJob>()
+                .WithExecutionHistoryStore(historyStore)
+                .Build();
+
+        await context.HostedService.ExecuteJobsAsync(
+            CancellationToken.None);
+
+        await historyStore.Received(1).UpdateAsync(
+            Arg.Is<ExecutionHistoryEntry>(
+                entry =>
+                    entry.Outcome == ExecutionOutcome.Skipped
+                    && entry.OutcomeReason == ExecutionOutcomeReason.Blocked),
+            CancellationToken.None);
+        await context.Coordinator.DidNotReceive().ExecuteAsync(
+            Arg.Any<ActiveExecution>(),
+            Arg.Any<JobExecutionOptions>(),
+            Arg.Any<Func<CancellationToken, Task>>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CT038_History_Recovery_Failures_Should_Not_Prevent_Callback()
+    {
+        var job =
+            new DummyJob();
+        var historyStore =
+            Substitute.For<IExecutionHistoryStore>();
+        historyStore
+            .MarkLeaseAcquiredAsync(
+                Arg.Any<Guid>(),
+                Arg.Any<CancellationToken>())
+            .Returns<Task<DateTimeOffset>>(
+                _ => throw new InvalidOperationException("history unavailable"));
+        historyStore
+            .MarkPreviousIncompleteAsAbandonedAsync(
+                Arg.Any<JobKey>(),
+                Arg.Any<Guid>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<CancellationToken>())
+            .Returns<Task<int>>(
+                _ => throw new InvalidOperationException("history unavailable"));
+
+        var context =
+            new HostedServiceBuilder()
+                .AddJob(job)
+                .WithExecutionHistoryStore(historyStore)
+                .Build();
+
+        context.Coordinator
+            .ExecuteAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<JobExecutionOptions>(),
+                Arg.Any<Func<CancellationToken, Task>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                await callInfo.Arg<Func<CancellationToken, Task>>()(
+                    CancellationToken.None);
+                return new ExecutionResult(ExecutionOutcome.Succeeded);
+            });
+
+        await context.HostedService.ExecuteJobsAsync(
+            CancellationToken.None);
+
+        Assert.True(job.Executed);
     }
 
     [Theory]
@@ -405,6 +483,113 @@ public sealed class HostedServiceTests
         Assert.False(
             string.IsNullOrWhiteSpace(
                 capturedExecution.OwnerId));
+
+        Assert.NotEqual(
+            Guid.Empty,
+            capturedExecution.CorrelationId);
+    }
+
+    [Fact]
+    public async Task CT034_HostedService_Should_Use_Host_Provided_Correlation_Id()
+    {
+        var expectedCorrelationId =
+            Guid.NewGuid();
+        var correlationProvider =
+            Substitute.For<IExecutionCorrelationIdProvider>();
+        correlationProvider
+            .GetCorrelationId(Arg.Any<JobKey>())
+            .Returns(expectedCorrelationId);
+        ActiveExecution? capturedExecution = null;
+
+        var context =
+            new HostedServiceBuilder()
+                .AddJob<DummyJob>()
+                .WithCorrelationIdProvider(correlationProvider)
+                .Build();
+
+        context.Coordinator
+            .ExecuteAsync(
+                Arg.Any<ActiveExecution>(),
+                Arg.Any<JobExecutionOptions>(),
+                Arg.Any<Func<CancellationToken, Task>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedExecution =
+                    callInfo.Arg<ActiveExecution>();
+                return new ExecutionResult(ExecutionOutcome.Succeeded);
+            });
+
+        await context.HostedService.ExecuteJobsAsync(
+            CancellationToken.None);
+
+        Assert.NotNull(capturedExecution);
+        Assert.Equal(
+            expectedCorrelationId,
+            capturedExecution!.CorrelationId);
+        correlationProvider.Received(1).GetCorrelationId(
+            Arg.Is<JobKey>(key => key.JobName == nameof(DummyJob)));
+    }
+
+    [Fact]
+    public async Task CT008_HostedService_Should_Recover_Previous_Incomplete_History_After_Acquisition()
+    {
+        var historyStore =
+            Substitute.For<IExecutionHistoryStore>();
+        historyStore
+            .MarkLeaseAcquiredAsync(
+                Arg.Any<Guid>(),
+                Arg.Any<CancellationToken>())
+            .Returns(DateTimeOffset.UtcNow);
+        historyStore
+            .MarkPreviousIncompleteAsAbandonedAsync(
+                Arg.Any<JobKey>(),
+                Arg.Any<Guid>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<CancellationToken>())
+            .Returns(1);
+
+        var job =
+            new DummyJob();
+        var leaseStore =
+            new InMemoryLeaseStore();
+        var coordinator =
+            new JobExecutionCoordinator(
+                leaseStore,
+                new LeaseHeartbeatService(leaseStore));
+        var context =
+            new HostedServiceBuilder()
+                .WithFailurePolicy(FailurePolicy.RequireManualReset)
+                .AddJob(job)
+                .WithExecutionHistoryStore(historyStore)
+                .WithCoordinator(coordinator)
+                .Build();
+
+        await context.HostedService.ExecuteJobsAsync(
+            CancellationToken.None);
+
+        await historyStore.Received(1).MarkLeaseAcquiredAsync(
+            Arg.Any<Guid>(),
+            Arg.Any<CancellationToken>());
+        await historyStore.Received(1).MarkPreviousIncompleteAsAbandonedAsync(
+            Arg.Any<JobKey>(),
+            Arg.Any<Guid>(),
+            Arg.Any<DateTimeOffset>(),
+            Arg.Any<CancellationToken>());
+        Assert.False(job.Executed);
+        await historyStore.Received(1).UpdateAsync(
+            Arg.Is<ExecutionHistoryEntry>(
+                entry =>
+                    entry.Outcome == ExecutionOutcome.Skipped
+                    && entry.OutcomeReason == ExecutionOutcomeReason.Blocked),
+            CancellationToken.None);
+        await context.StateManager.Received(1).HandleExecutionResultAsync(
+            Arg.Any<JobKey>(),
+            FailurePolicy.RequireManualReset,
+            Arg.Is<ExecutionResult>(
+                result => result.Outcome == ExecutionOutcome.Skipped
+                    && result.OutcomeReason == ExecutionOutcomeReason.Blocked),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]

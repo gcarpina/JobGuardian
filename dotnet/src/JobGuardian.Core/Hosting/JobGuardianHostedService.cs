@@ -26,6 +26,8 @@ internal sealed class JobGuardianHostedService
 
     private readonly IExecutionIdentityProvider _identityProvider;
 
+    private readonly IExecutionCorrelationIdProvider? _correlationIdProvider;
+
     private readonly IExecutionHistoryStore? _executionHistoryStore;
 
     private readonly IHostEnvironment? _hostEnvironment;
@@ -47,7 +49,8 @@ internal sealed class JobGuardianHostedService
         RuntimeOptions options,
         ILogger<JobGuardianHostedService> logger,
         IExecutionHistoryStore? executionHistoryStore = null,
-        IHostEnvironment? hostEnvironment = null)
+        IHostEnvironment? hostEnvironment = null,
+        IExecutionCorrelationIdProvider? correlationIdProvider = null)
     {
         Jobs = jobs;
         _scopeFactory = scopeFactory;
@@ -58,6 +61,7 @@ internal sealed class JobGuardianHostedService
         _logger = logger;
         _executionHistoryStore = executionHistoryStore;
         _hostEnvironment = hostEnvironment;
+        _correlationIdProvider = correlationIdProvider;
     }
 
     protected override async Task ExecuteAsync(
@@ -132,6 +136,25 @@ internal sealed class JobGuardianHostedService
                     descriptor,
                     cancellationToken))
             {
+                var blockedExecution =
+                    CreateExecution(descriptor);
+                var blockedHistory =
+                    CreateHistoryEntry(
+                        descriptor,
+                        blockedExecution,
+                        DateTimeOffset.UtcNow);
+                var blockedHistoryCreated =
+                    await TryCreateHistoryAsync(
+                        blockedHistory,
+                        cancellationToken);
+
+                await TryCompleteHistoryAsync(
+                    blockedHistory,
+                    blockedHistoryCreated,
+                    ExecutionOutcome.Skipped,
+                    null,
+                    ExecutionOutcomeReason.Blocked);
+
                 continue;
             }
 
@@ -164,14 +187,61 @@ internal sealed class JobGuardianHostedService
 
             var executionStartedAt =
                 Stopwatch.GetTimestamp();
-
             try
             {
                 var executionResult =
                     await _coordinator.ExecuteAsync(
                         execution,
                         CreateOptions(descriptor),
-                        job.ExecuteAsync,
+                        async token =>
+                        {
+                            if (_executionHistoryStore is not null)
+                            {
+                                if (historyCreated)
+                                {
+                                    try
+                                    {
+                                        await _executionHistoryStore.MarkLeaseAcquiredAsync(
+                                            execution.ExecutionId,
+                                            token);
+                                    }
+                                    catch (Exception exception)
+                                    {
+                                        _logger.LogError(
+                                            exception,
+                                            "Failed to record lease acquisition in history for {ExecutionId}",
+                                            execution.ExecutionId);
+                                    }
+                                }
+
+                                var recoveredAbandonedExecutions = 0;
+                                try
+                                {
+                                    recoveredAbandonedExecutions =
+                                        await _executionHistoryStore.MarkPreviousIncompleteAsAbandonedAsync(
+                                            descriptor.JobKey,
+                                            execution.ExecutionId,
+                                            DateTimeOffset.UtcNow,
+                                            token);
+                                }
+                                catch (Exception exception)
+                                {
+                                    _logger.LogError(
+                                        exception,
+                                        "Failed to classify previous incomplete executions as abandoned for {JobKey}",
+                                        descriptor.JobKey);
+                                }
+
+                                if (recoveredAbandonedExecutions > 0
+                                    && descriptor.Policy.FailurePolicy
+                                        == FailurePolicy.RequireManualReset)
+                                {
+                                    throw new ExecutionBlockedException();
+                                }
+                            }
+
+                            await job.ExecuteAsync(token);
+                        },
                         cancellationToken);
 
                 var executionDurationMilliseconds =
@@ -183,7 +253,8 @@ internal sealed class JobGuardianHostedService
                     historyCreated,
                     executionResult.Outcome,
                     GetFailureCategory(
-                        executionResult.Outcome));
+                        executionResult.Outcome),
+                    executionResult.OutcomeReason);
 
                 try
                 {
@@ -257,7 +328,8 @@ internal sealed class JobGuardianHostedService
                     historyEntry,
                     historyCreated,
                     ExecutionOutcome.Failed,
-                    "InfrastructureFailure");
+                    "InfrastructureFailure",
+                    null);
 
                 _logger.LogError(
                     ex,
@@ -276,7 +348,11 @@ internal sealed class JobGuardianHostedService
         {
             JobKey = descriptor.JobKey,
             ExecutionId = Guid.NewGuid(),
-            OwnerId = _identityProvider.GetOwnerId()
+            OwnerId = _identityProvider.GetOwnerId(),
+            CorrelationId =
+                _correlationIdProvider?.GetCorrelationId(
+                    descriptor.JobKey)
+                ?? Guid.NewGuid()
         };
     }
 
@@ -308,6 +384,7 @@ internal sealed class JobGuardianHostedService
         {
             ExecutionId = execution.ExecutionId,
             JobKey = descriptor.JobKey,
+            CorrelationId = execution.CorrelationId,
             ProtocolVersion = ProtocolVersions.ProtocolVersion,
             SchemaVersion = ProtocolVersions.SchemaVersion,
             ApplicationName =
@@ -389,7 +466,8 @@ internal sealed class JobGuardianHostedService
         ExecutionHistoryEntry entry,
         bool historyCreated,
         ExecutionOutcome outcome,
-        string? failureCategory)
+        string? failureCategory,
+        ExecutionOutcomeReason? outcomeReason)
     {
         if (_executionHistoryStore is null || !historyCreated)
         {
@@ -403,7 +481,8 @@ internal sealed class JobGuardianHostedService
                 {
                     EndedAtUtc = DateTimeOffset.UtcNow,
                     Outcome = outcome,
-                    FailureCategory = failureCategory
+                    FailureCategory = failureCategory,
+                    OutcomeReason = outcomeReason
                 },
                 CancellationToken.None);
         }

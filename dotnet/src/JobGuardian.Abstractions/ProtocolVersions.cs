@@ -17,5 +17,5 @@ public static class ProtocolVersions
     /// <summary>
     /// Gets the schema version used by persisted JobGuardian metadata.
     /// </summary>
-    public const string SchemaVersion = "1.0";
+    public const string SchemaVersion = "2.0";
 }

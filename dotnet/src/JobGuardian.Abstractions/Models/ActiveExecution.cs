@@ -19,4 +19,9 @@ public sealed record ActiveExecution
     /// Gets the owner identifier for the runtime instance currently executing the job.
     /// </summary>
     public required string OwnerId { get; init; }
+
+    /// <summary>
+    /// Gets the correlation identifier shared by all callback retries for this execution.
+    /// </summary>
+    public Guid CorrelationId { get; init; } = Guid.NewGuid();
 }

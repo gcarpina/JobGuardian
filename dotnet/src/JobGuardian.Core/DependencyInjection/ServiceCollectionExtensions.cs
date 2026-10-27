@@ -10,6 +10,7 @@ using JobGuardian.Core.Options;
 using JobGuardian.Core.Policies;
 using JobGuardian.Core.State;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace JobGuardian.Core.DependencyInjection;
 
@@ -42,6 +43,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<
             IExecutionIdentityProvider,
             MachineNameExecutionIdentityProvider>();
+
+        services.TryAddSingleton<
+            IExecutionCorrelationIdProvider,
+            DefaultExecutionCorrelationIdProvider>();
 
         services.AddSingleton<
             ILeaseStore,
@@ -100,6 +105,10 @@ public static class ServiceCollectionExtensions
         where TJob : class, IJob
     {
         ArgumentNullException.ThrowIfNull(policy);
+
+        JobExecutionSettings.Validate(
+            policy.LeaseDuration,
+            policy.HeartbeatInterval);
 
         JobExecutionRetrySettings.Validate(
             policy.MaxAttempts,

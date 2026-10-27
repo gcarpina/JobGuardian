@@ -93,7 +93,7 @@ public sealed class PostgreSqlLeaseStore
                 lease_until_utc = CURRENT_TIMESTAMP + @LeaseDuration
             WHERE
                 jobguardian_active_executions.lease_until_utc
-                    < CURRENT_TIMESTAMP;
+                    <= CURRENT_TIMESTAMP;
             """;
 
         var command =
@@ -151,7 +151,7 @@ public sealed class PostgreSqlLeaseStore
                 AND job_namespace = @JobNamespace
                 AND job_name = @JobName
                 AND execution_id = @ExecutionId
-                AND lease_until_utc >= CURRENT_TIMESTAMP
+                AND lease_until_utc > CURRENT_TIMESTAMP
             """;
 
         await using var connection =
@@ -254,7 +254,7 @@ public sealed class PostgreSqlLeaseStore
                 tenant_id = @TenantId
                 AND job_namespace = @JobNamespace
                 AND job_name = @JobName
-                AND lease_until_utc >= CURRENT_TIMESTAMP
+                AND lease_until_utc > CURRENT_TIMESTAMP
             """;
 
         await using var connection =

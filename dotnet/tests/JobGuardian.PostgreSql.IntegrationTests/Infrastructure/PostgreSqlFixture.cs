@@ -56,6 +56,29 @@ public sealed class PostgreSqlFixture
                 connection);
 
         await command.ExecuteNonQueryAsync();
+
+        var migrationPath =
+            Path.GetFullPath(
+                Path.Combine(
+                    AppContext.BaseDirectory,
+                    "../../../../../../sql/postgresql/V002_execution_history_query_and_recovery.sql"));
+
+        if (!File.Exists(migrationPath))
+        {
+            throw new FileNotFoundException(
+                $"Migration file not found: {migrationPath}");
+        }
+
+        var migration =
+            await File.ReadAllTextAsync(
+                migrationPath);
+
+        await using var migrationCommand =
+            new NpgsqlCommand(
+                migration,
+                connection);
+
+        await migrationCommand.ExecuteNonQueryAsync();
     }
 
     public async Task ResetDatabaseAsync()

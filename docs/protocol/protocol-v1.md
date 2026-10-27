@@ -1,393 +1,169 @@
-﻿# JobGuardian Protocol v1
+# JobGuardian Protocol v1
 
 Version: 1.0
 
-Status: Draft
+Status: Ratified for the JobGuardian .NET 1.0 release
 
----
+## 1. Purpose and product boundary
 
-# 1. Vision
+JobGuardian coordinates singleton execution of a tenant-scoped job using a shared persistence
+provider. It is not a general-purpose scheduler. The .NET hosted poller is a convenience trigger;
+production schedule definition and calendar semantics belong to an external scheduler or host.
 
-JobGuardian enables singleton execution of jobs across multiple nodes, processes, containers and Kubernetes clusters using a shared persistence store.
+Protocol v1 is language-neutral. At the 1.0 release, only the .NET SDK and its PostgreSQL provider
+claim conformance. Another SDK may claim conformance only after it has an implementation and passes
+the applicable contract tests.
 
-JobGuardian is not a scheduler.
+The SDK includes programmatic job-state reset. It does not provide a control plane, dashboard,
+manual-run endpoint, force takeover, authentication, authorization, or administrative audit.
+Applications exposing administrative operations own their authentication, authorization, and audit.
 
-Scheduling is delegated to external schedulers such as:
+## 2. Identity and time
 
-- Kubernetes CronJobs
-- Linux Cron
-- Windows Task Scheduler
-- BackgroundService loops
-- Custom schedulers
+A job is identified by `tenant_id + job_namespace + job_name`. `tenant_id` is mandatory; `default`
+is a valid tenant identifier. The identity is used consistently for leases, job state, history
+queries, and recovery.
 
----
+Lease ownership decisions use only the persistence provider's authoritative database time. Local
+process clocks must not affect acquisition, renewal, release, or expiry decisions.
 
-# 2. Core Concepts
+An execution may acquire a lease if no active lease exists or the current lease has expired. A lease
+is expired when `lease_until_utc <= database_time`. Renewal is permitted only while
+`lease_until_utc > database_time`, for the current execution owner. Acquisition must be atomic so
+at most one owner holds a valid lease for a job.
 
-## Tenant
+## 3. Heartbeat and lease configuration
 
-A logical isolation boundary.
+Each execution configures a positive `lease_duration` and positive `heartbeat_interval`. The
+configuration is invalid unless `heartbeat_interval < lease_duration`; SDKs must reject invalid
+configuration before executing the job. An interval no greater than one third of the lease duration
+is recommended, but is not mandatory.
 
-## Job
+Heartbeats renew the lease while callback work or retry delay is in progress. If renewal fails or
+ownership can no longer be confirmed, the SDK cancels the callback cooperatively and terminates the
+coordinated execution as `LeaseLost`. It must not invoke another callback attempt after lease loss.
 
-A uniquely identifiable execution target.
+## 4. Execution lifecycle and outcomes
 
-A job is defined by:
+An execution has one stable execution ID and one terminal outcome. Callback retry attempts remain
+part of that coordinated execution and do not create separate history records.
 
-- tenant_id
-- job_namespace
-- job_name
+The canonical outcomes are:
 
-## Execution
+| Outcome | Meaning |
+|---|---|
+| `Succeeded` | The callback completed successfully while the owner held the lease |
+| `Failed` | All configured callback attempts ended with an exception |
+| `Cancelled` | The callback stopped in response to cooperative cancellation or host shutdown |
+| `LeaseLost` | The SDK could not renew or confirm its lease and stopped the callback |
+| `Skipped` | The callback did not start; `outcome_reason` distinguishes `LeaseBusy` and `Blocked` |
+| `Abandoned` | A previously acquired execution had no terminal outcome persisted when a later owner acquired the expired lease |
 
-A single execution instance of a Job.
+`Abandoned` is an observation about persisted state, not proof that the prior process crashed. A
+network partition, database outage, or history-write failure can produce the same observation.
+After a successful lease acquisition, recovery marks earlier history entries that are both marked
+as having acquired a lease and still have no outcome as terminal `Abandoned` entries. Failed
+best-effort history writes are logged and do not prevent the newly acquired callback from running;
+an entry that could not be updated remains eligible for a later recovery attempt.
 
-## Owner
-
-The runtime instance currently owning an active execution.
-
-Recommended format:
-
-environment/application/instance
-
-Example:
-
-production/invoice-service/pod-123
-
-## Lease
-
-A distributed coordination mechanism used to ensure singleton execution.
-
----
-
-# 3. Job Identity
-
-The unique logical identity of a Job is:
-
-tenant_id + job_namespace + job_name
-
-Example:
-
-default/finance/nightly-import
-
----
-
-# 4. Acquire Semantics
-
-An execution may acquire a lease if:
-
-- no active execution exists
-
-OR
-
-- existing lease is expired
-
-An execution must not acquire a lease if:
-
-- a valid lease already exists
-
-The authoritative time source is the database UTC time.
-
-Local clocks must never be used for lease ownership decisions.
-
----
-
-# 5. Heartbeat Semantics
-
-Each active execution owns:
-
-- lease_duration
-- heartbeat_interval
-
-Constraint:
-
-heartbeat_interval < lease_duration
-
-Recommended:
-
-heartbeat_interval <= lease_duration / 3
-
-Heartbeat renews ownership of the lease.
-
----
-
-# 6. Release Semantics
-
-When execution completes:
-
-- update execution history
-- remove active execution
-
-Release must occur for:
-
-- Success
-- Failed
-
-Release is not required for crash recovery.
-
----
-
-# 7. Expiration Semantics
-
-If an owner disappears:
-
-- crash
-- process termination
-- node failure
-- pod deletion
-- network isolation
-
-heartbeat stops.
-
-The lease eventually expires.
-
-A new owner may acquire the execution.
-
----
-
-# 8. Failure Policies
-
-## Ignore
-
-Execution may run regardless of previous execution outcome.
-
-## RequireManualReset
-
-Execution is blocked after failure until manually reset.
-
----
-
-# 9. Outcomes
-
-Supported outcomes:
-
-- Success
-- Failed
-- Abandoned
-- Skipped
-
----
-
-# 10. Run Types
-
-Supported run types:
-
-- Scheduled
-- Manual
-- Recovery
-
----
-
-# 11. Triggered By
-
-Supported trigger sources:
-
-- Scheduler
-- Operator
-- RecoveryPolicy
-- Api
-
----
-
-# 12. Tracing
-
-Each execution may define:
-
-- correlation_id
-- conversation_id
-
----
-
-# 13. Versioning
-
-Each execution must contain:
-
-- protocol_version
-- schema_version
-
----
-
-# 14. Multi Tenant Model
-
-tenant_id is mandatory.
-
-Implementations must support:
-
-default
-
-as the default tenant identifier.
-
----
-
-# 15. Retention
-
-Execution history retention is configurable.
-
-Default retention:
-
-365 days
-
----
-
-# 16. Observability
-
-Implementations should expose:
-
-- metrics
-- traces
-- logs
-
-OpenTelemetry is the recommended observability model.
-
-Prometheus-compatible metrics are required.
-
----
-
-# 17. Security
-
-Dashboards and administrative tools should support:
-
-- OIDC
-- OAuth2
-- Role Based Access Control
-
-Recommended roles:
-
-- Viewer
-- Operator
-- Admin
-
-# 18. Acquire Algorithm
-
-Acquire operations must be atomic.
-
-Inputs:
-
-- tenant_id
-- job_namespace
-- job_name
-- execution_id
-- owner_id
-- lease_duration
-
-Algorithm:
-
-Acquire(job)
-
-    dbNow = GetDatabaseUtcTime()
-
-    leaseUntilUtc = dbNow + LeaseDuration
-
-    Attempt Atomic Acquire
-
-        IF no active execution exists
-
-            create active execution
-
-            return Success
-
-        ELSE IF lease is expired
-
-            transfer ownership
-
-            return Success
-
-        ELSE
-
-            return Failure
-
-The implementation of atomic acquisition is provider-specific.
-
-Observable behavior must remain consistent across all providers.
-
-# 19. Renew Algorithm
-
-Renew(execution)
-
-    dbNow = GetDatabaseUtcTime()
-
-    newLeaseUntilUtc =
-        dbNow + LeaseDuration
-
-    Success =
-        Atomic Renew
-
-        WHERE
-
-            Job matches
-
-            AND
-
-            ExecutionId matches
-
-            AND
-
-            Lease is not expired
-
-        SET
-
-            RenewedAtUtc = dbNow
-
-            LeaseUntilUtc = newLeaseUntilUtc
-
-    IF Success
-
-        return Success
-
-    ELSE
-
-        return Failure
-
-# 20. Release Algorithm
-
-Release(execution)
-
-    Update execution history
-
-        Outcome
-        FailureCategory
-        EndedAtUtc
-
-    Remove active execution
-
-    Return Success
-
-# 21. Expiration Algorithm
-
-ExpirationCheck(activeExecution)
-
-    dbNow = GetDatabaseUtcTime()
-
-    IF
-
-        LeaseUntilUtc < dbNow
-
-    THEN
-
-        Lease is expired
-
-        Ownership is lost
-
-        Another owner may acquire
-
-# 22. Ownership Rules
-
-For a given:
-
-tenant_id
-job_namespace
-job_name
-
-there can be at most one active owner.
-
-Ownership is transferred only when:
-
-- lease expires
-
-or
-
-- current owner releases execution
-
-Ownership decisions are based exclusively on:
-
-Database UTC Time
+`Skipped` has stable reason codes. `LeaseBusy` means another valid owner prevented acquisition;
+`Blocked` means `RequireManualReset` state prevented the attempt. Neither reason invokes the job
+callback or blocks future executions by itself.
+
+## 5. Failure policy and reset
+
+`Ignore` leaves the job eligible after any terminal execution outcome.
+
+`RequireManualReset` blocks subsequent scheduled attempts after `Failed`, `LeaseLost`, or
+`Abandoned`. `Succeeded`, `Cancelled`, and `Skipped` do not block. A programmatic SDK reset returns
+the job to an eligible state. Authentication, authorization, and audit of who invoked reset are the
+responsibility of the hosting application.
+
+When an `Abandoned` entry is discovered during a later successful acquisition, the SDK persists the
+blocked state and does not invoke that newly acquired callback when `RequireManualReset` is
+configured. The coordinated attempt is recorded as `Skipped` with reason `Blocked`, and its lease
+is released. Later poller attempts remain `Skipped`/`Blocked` until the host resets the state.
+Recovery does not claim that lease acquisition and history/state updates are one transaction.
+
+## 6. Bounded callback retries
+
+Retry settings are part of Protocol v1 and must have equivalent semantics across conforming SDKs.
+`max_attempts` counts the initial callback invocation and all retries; valid values are 1 through
+10 and the default is 1. The fixed delay between failed attempts is configurable from zero through
+five minutes and defaults to one second; exponential backoff and jitter are not part of v1.
+
+Only a callback exception can trigger another attempt. Cancellation and `LeaseLost` terminate
+immediately without retry. When all attempts fail, the coordinated outcome is `Failed`. All
+attempts and delays use the same execution ID, correlation ID, and lease.
+
+An exception does not prove that external side effects did not occur. Enabling more than one
+attempt requires the application callback to make side effects idempotent or deduplicate them.
+JobGuardian does not guarantee exactly-once side effects. The retry limit bounds callback
+invocations, not wall-clock duration; callbacks must cooperate with cancellation and should enforce
+their own operation timeouts.
+
+## 7. Execution history
+
+History is an operational record, not a transactional guarantee for job execution. Failure to
+create or update history must be logged and reported through available diagnostics but must not
+prevent a callback from running or change the callback's outcome. History may therefore contain
+incomplete rows after process failure or persistence outages.
+
+The history API supports:
+
+- Lookup by execution ID
+- Query by tenant-scoped job identity
+- Required inclusive `started_from_utc` and exclusive `started_before_utc` bounds
+- Optional outcome filter
+- One-based page number and page size from 1 through 100
+- Deterministic ordering by start time descending, then execution ID descending
+
+Retention and deletion are owned by the consumer/operator. The SDK does not delete history
+automatically and does not promise a default retention period. Operators must establish and verify
+a retention policy appropriate to their operational and regulatory requirements. History can
+contain identifiers and failure context and must be protected accordingly.
+
+The PostgreSQL provider does not apply schema migrations automatically. Apply the initial schema
+and subsequent versioned migration scripts before upgrading the SDK. History schema version 2.0
+adds lease-acquisition tracking, an outcome reason, and query/recovery indexes.
+
+## 8. Correlation and observability
+
+The host may supply a correlation ID for each execution. If none is available, the SDK generates a
+GUID. The selected ID remains stable across all callback attempts and is persisted to execution
+history when history storage is available. Conversation IDs are optional and are not required by
+the .NET 1.0 runtime.
+
+Trace context is separate from correlation ID and follows the OpenTelemetry `Activity` context.
+JobGuardian provides ActivitySource and Meter signals; the hosting application configures
+listeners, processors, exporters, credentials, and endpoints. The SDK does not open telemetry
+endpoints or send telemetry without host configuration.
+
+Metric attributes must be low-cardinality and non-sensitive. Tenant IDs, job IDs/names,
+execution IDs, correlation IDs, and error messages must not be metric attributes. Trace and log
+attributes may carry execution identifiers where operationally useful, subject to the host's
+privacy and retention policy. Exporters and endpoints are host responsibilities.
+
+## 9. Versioning, security, and support
+
+History records the protocol and persistence schema version used for the execution. PostgreSQL
+schema scripts are versioned and must be applied in order. A provider upgrade must not silently
+claim compatibility with an unapplied schema migration.
+
+JobGuardian distinguishes build compatibility from framework servicing. It does not promise
+security or maintenance fixes for a target framework after Microsoft's end-of-support date.
+`net8.0` continues to be compiled and tested for now, including after Microsoft's support ends on
+2026-11-10. This build compatibility does not extend Microsoft's servicing or create a JobGuardian
+security-fix commitment. `net10.0` is currently supported by Microsoft through 2028-11-14.
+
+The lifecycle dates reflect Microsoft's policy as of 2026-10-27 and must be rechecked before each
+release. Removing `net8.0` from builds and tests is a separate product decision and must be discussed
+before the target is removed. Consumers should move to a Microsoft-supported runtime to receive
+Microsoft security and maintenance updates.
+
+## 10. Conformance
+
+An SDK may claim conformance only for behaviors it implements and has verified against the
+contract tests in [Contract Tests v1](../contracts/contract-tests-v1.md). Protocol text alone does
+not establish implementation conformance. For the initial 1.0 release, conformance is limited to
+the .NET SDK/PostgreSQL implementation.

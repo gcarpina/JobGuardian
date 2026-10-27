@@ -5,17 +5,17 @@ using JobGuardian.Core.Execution;
 using JobGuardian.Core.Hosting;
 using JobGuardian.Core.Models;
 using JobGuardian.Core.Options;
+using JobGuardian.Core.State;
 using JobGuardian.Core.Tests.TestKit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
-using JobGuardian.Core.State;
 
 internal sealed class HostedServiceBuilder
 {
-    private readonly IJobExecutionCoordinator
+    private IJobExecutionCoordinator
         _coordinator;
 
     private readonly IServiceProvider
@@ -37,6 +37,8 @@ internal sealed class HostedServiceBuilder
         _hostEnvironment;
 
     private IExecutionHistoryStore? _executionHistoryStore;
+
+    private IExecutionCorrelationIdProvider? _correlationIdProvider;
 
     private readonly List<JobDescriptor>
         _jobs = [];
@@ -193,6 +195,24 @@ internal sealed class HostedServiceBuilder
         return this;
     }
 
+    public HostedServiceBuilder WithCoordinator(
+        IJobExecutionCoordinator coordinator)
+    {
+        _coordinator =
+            coordinator;
+
+        return this;
+    }
+
+    public HostedServiceBuilder WithCorrelationIdProvider(
+        IExecutionCorrelationIdProvider correlationIdProvider)
+    {
+        _correlationIdProvider =
+            correlationIdProvider;
+
+        return this;
+    }
+
     public HostedServiceBuilder WithExecutionResult(
         ExecutionResult executionResult)
     {
@@ -233,7 +253,8 @@ internal sealed class HostedServiceBuilder
                 _runtimeOptions,
                 _logger,
                 _executionHistoryStore,
-                _hostEnvironment);
+                _hostEnvironment,
+                _correlationIdProvider);
 
         return new HostedServiceContext
         {

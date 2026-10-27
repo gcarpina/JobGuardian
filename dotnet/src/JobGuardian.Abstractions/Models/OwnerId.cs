@@ -7,6 +7,9 @@ namespace JobGuardian.Abstractions.Models;
 /// Owner identifiers are used to distinguish the runtime instance that currently owns a lease or is
 /// responsible for an execution.
 /// </remarks>
+/// <param name="Environment">The environment hosting the application instance.</param>
+/// <param name="Application">The application that owns the execution.</param>
+/// <param name="Instance">The specific application instance.</param>
 public sealed record OwnerId(
     string Environment,
     string Application,

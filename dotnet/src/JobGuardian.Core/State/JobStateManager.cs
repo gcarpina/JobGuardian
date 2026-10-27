@@ -61,9 +61,18 @@ public sealed class JobStateManager
         ExecutionResult executionResult,
         CancellationToken cancellationToken = default)
     {
-        if (executionResult.Outcome == ExecutionOutcome.Skipped)
+        if (executionResult.Outcome == ExecutionOutcome.Skipped
+            && (executionResult.OutcomeReason != ExecutionOutcomeReason.Blocked
+                || failurePolicy != FailurePolicy.RequireManualReset))
         {
             return;
+        }
+
+        if (executionResult.Outcome == ExecutionOutcome.Skipped)
+        {
+            executionResult =
+                new ExecutionResult(
+                    ExecutionOutcome.Abandoned);
         }
 
         var currentState =

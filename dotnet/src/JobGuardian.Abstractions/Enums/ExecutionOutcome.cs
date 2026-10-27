@@ -28,5 +28,11 @@ public enum ExecutionOutcome
     /// <summary>
     /// The job execution was skipped because lease ownership could not be acquired.
     /// </summary>
-    Skipped
+    Skipped,
+
+    /// <summary>
+    /// A previously acquired execution had no persisted terminal outcome when a later
+    /// owner acquired the job after lease expiry.
+    /// </summary>
+    Abandoned
 }

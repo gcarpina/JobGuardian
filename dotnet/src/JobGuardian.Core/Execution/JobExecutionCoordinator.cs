@@ -73,6 +73,10 @@ public sealed class JobExecutionCoordinator
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(job);
 
+        JobExecutionSettings.Validate(
+            options.LeaseDuration,
+            options.HeartbeatInterval);
+
         JobExecutionRetrySettings.Validate(
             options.MaxAttempts,
             options.RetryDelay);
@@ -162,7 +166,10 @@ public sealed class JobExecutionCoordinator
         if (!acquired)
         {
             return new ExecutionResult(
-                ExecutionOutcome.Skipped);
+                ExecutionOutcome.Skipped)
+            {
+                OutcomeReason = ExecutionOutcomeReason.LeaseBusy
+            };
         }
 
         using var executionTokenSource =
@@ -543,6 +550,16 @@ public sealed class JobExecutionCoordinator
                 ExecutionOutcome.Cancelled.ToString());
             throw;
         }
+        catch (ExecutionBlockedException)
+        {
+            activity?.SetTag(
+                "jobguardian.outcome",
+                ExecutionOutcome.Skipped.ToString());
+            activity?.SetTag(
+                "jobguardian.outcome.reason",
+                ExecutionOutcomeReason.Blocked.ToString());
+            throw;
+        }
         catch (Exception exception)
         {
             activity?.SetTag(
@@ -571,6 +588,14 @@ public sealed class JobExecutionCoordinator
             return new ExecutionResult(
                 ExecutionOutcome.Cancelled,
                 exception);
+        }
+        catch (ExecutionBlockedException)
+        {
+            return new ExecutionResult(
+                ExecutionOutcome.Skipped)
+            {
+                OutcomeReason = ExecutionOutcomeReason.Blocked
+            };
         }
         catch (Exception exception)
         {

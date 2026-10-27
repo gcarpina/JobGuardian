@@ -128,23 +128,29 @@ For distributed execution across multiple application instances, enable the Post
 Reference the `JobGuardian.Core` and `JobGuardian.PostgreSql` packages. Apply the repository
 schema script to the target database before starting the application; the provider does not run
 migrations automatically. The script is available in the repository at
-`sql/postgresql/V001_initial_schema.sql` and is included in the `JobGuardian.PostgreSql` package.
+`sql/postgresql/` and both versioned scripts are included in the `JobGuardian.PostgreSql` package.
 NuGet stores it in the package cache; it does not copy the script into the application project or
 apply it automatically. See the [package consumer sample](../dotnet/samples/PackageConsumer/README.md)
 for the cache path and a `psql` example. Against a database and from the repository root, the
-repository copy can be applied with:
+repository scripts must be applied in order:
 
 ```sh
 psql "$DATABASE_URL" -f sql/postgresql/V001_initial_schema.sql
+psql "$DATABASE_URL" -f sql/postgresql/V002_execution_history_query_and_recovery.sql
 ```
 
 The PostgreSQL provider also persists execution attempts in
-`jobguardian_execution_history`. Records include the attempt timestamps, `ExecutionOutcome`, and
-a failure category; exception messages are not stored. History writes are best-effort and do not
-replace the execution outcome. The initial implementation has no history query API or automatic
-retention, so define a retention policy for long-running deployments. The audit table remains
-reserved for future work. Provide `connectionString` from application configuration rather than
-hard-coding credentials.
+`jobguardian_execution_history`, including correlation ID, lease-acquisition time, terminal
+`ExecutionOutcome`, outcome reason, and failure category. History writes are best-effort and do not
+replace the callback outcome. A paginated query API is available; history is not deleted
+automatically, so operators must define and execute an appropriate retention policy. The audit
+table remains reserved for future work. Provide `connectionString` from application configuration
+rather than hard-coding credentials.
+
+By default, JobGuardian generates a correlation ID for each coordinated execution and retains it
+across callback retries. A host can supply its own value by registering an
+`IExecutionCorrelationIdProvider`. OpenTelemetry trace context is separate and follows the current
+`Activity`.
 
 ```csharp
 using JobGuardian.Core.DependencyInjection;

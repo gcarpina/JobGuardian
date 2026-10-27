@@ -4,6 +4,10 @@
 
 Accepted
 
+> The outcome vocabulary and 1.0 failure-policy semantics in this ADR are superseded by
+> [ADR-015](./ADR-015-JobGuardian-1.0-Contract-Ratification.md). Retain this document for the
+> original domain rationale; use ADR-015 and Protocol v1 for current normative behavior.
+
 ---
 
 ## Context
@@ -60,7 +64,8 @@ public enum ExecutionOutcome
     Failed,
     Cancelled,
     LeaseLost,
-    Skipped
+    Skipped,
+    Abandoned
 }
 ```
 
@@ -185,7 +190,8 @@ Represents an attempt that did not start the job callback.
 
 Conditions:
 
-- Lease acquisition failed
+- Lease acquisition failed because another owner has a valid lease (`LeaseBusy`), or
+- Persisted `RequireManualReset` state prevents execution (`Blocked`)
 
 Example:
 
@@ -197,7 +203,18 @@ Not Acquired
 Skipped
 ```
 
-The job was never executed.
+The job was never executed. History distinguishes the reason as `LeaseBusy` or `Blocked`.
+
+---
+
+### Abandoned
+
+Represents a previously lease-acquired execution for which no terminal outcome was persisted
+before a later owner acquired the expired lease.
+
+This is an observation about persisted state and does not prove that the prior process crashed.
+The execution is terminally recorded in history as `Abandoned`; recovery failures are best-effort
+and must be reported without preventing the new owner from continuing.
 
 ---
 
@@ -250,7 +267,9 @@ The runtime shall map execution events according to the following table.
 | Job exception | Failed |
 | Cancellation request honoured | Cancelled |
 | Lease ownership lost | LeaseLost |
-| Lease acquisition not granted | Skipped |
+| Lease acquisition not granted | Skipped (`LeaseBusy`) |
+| Persistent state blocks execution | Skipped (`Blocked`) |
+| Prior acquired execution is incomplete when a later owner acquires | Abandoned |
 
 ---
 
@@ -292,6 +311,7 @@ The same lease and heartbeat remain active across callback attempts and retry de
 Outcome       Ignore             RequireManualReset
 Failed        Eligible           Blocked
 LeaseLost     Eligible           Blocked
+Abandoned     Eligible           Blocked
 ```
 
 An exception does not establish that external side effects were rolled back. A callback may have
