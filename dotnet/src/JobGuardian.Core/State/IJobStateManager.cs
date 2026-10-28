@@ -55,10 +55,14 @@ public interface IJobStateManager
     /// <param name="jobKey">
     /// The job whose state should be reset.
     /// </param>
+    /// <param name="actorId">
+    /// Stable identifier of the authenticated user or service principal requesting the reset.
+    /// </param>
     /// <param name="cancellationToken">
     /// Token used to cancel the operation.
     /// </param>
     Task ResetAsync(
         JobKey jobKey,
+        string actorId,
         CancellationToken cancellationToken = default);
 }

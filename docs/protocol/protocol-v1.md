@@ -14,9 +14,11 @@ Protocol v1 is language-neutral. At the 1.0 release, only the .NET SDK and its P
 claim conformance. Another SDK may claim conformance only after it has an implementation and passes
 the applicable contract tests.
 
-The SDK includes programmatic job-state reset. It does not provide a control plane, dashboard,
-manual-run endpoint, force takeover, authentication, authorization, or administrative audit.
-Applications exposing administrative operations own their authentication, authorization, and audit.
+The SDK includes programmatic job-state reset and records each accepted reset request in its audit
+store before changing state. It does not provide a control plane, dashboard, manual-run endpoint,
+force takeover, authentication, or authorization. The hosting application authenticates the actor
+and supplies a stable actor ID. Applications exposing other administrative operations own their
+authentication, authorization, and audit.
 
 ## 2. Identity and time
 
@@ -76,8 +78,13 @@ callback or blocks future executions by itself.
 
 `RequireManualReset` blocks subsequent scheduled attempts after `Failed`, `LeaseLost`, or
 `Abandoned`. `Succeeded`, `Cancelled`, and `Skipped` do not block. A programmatic SDK reset returns
-the job to an eligible state. Authentication, authorization, and audit of who invoked reset are the
-responsibility of the hosting application.
+the job to an eligible state and requires a non-empty stable actor ID from the host. Each accepted
+request, including an idempotent reset, is recorded as `ResetJobRequested` before changing state.
+The event stores tenant, job identity, UTC request timestamp, and actor ID; actor display name and
+free-form reason are optional and omitted by the SDK. If audit persistence fails, the reset is not
+applied and the error is propagated. The event records the request, not successful completion of
+the state change. PostgreSQL audit entries are durable; InMemory audit entries are lost when the
+process exits. The host remains responsible for authentication, authorization, and audit retention.
 
 When an `Abandoned` entry is discovered during a later successful acquisition, the SDK persists the
 blocked state and does not invoke that newly acquired callback when `RequireManualReset` is

@@ -29,9 +29,9 @@ deployment has been approved.
 - PostgreSQL schema provisioning is an operator responsibility; the provider does not apply migrations
 - The current failure policies are `Ignore` and `RequireManualReset`; bounded callback retries are opt-in and default to one total attempt
 - Execution history is queryable by tenant/job, bounded time range and outcome; retention and deletion remain consumer/operator responsibilities
-- The .NET Core runtime emits execution and lease metrics/traces through `Meter` and `ActivitySource`; SDK/exporter setup, state gauges, and administrative instrumentation remain host/follow-up responsibilities
-- Audit behavior, dashboards and additional database providers are outside the MVP
-- The initial PostgreSQL schema also contains an audit table reserved for future work; its presence does not indicate runtime support
+- The .NET Core runtime emits execution and lease metrics/traces through `Meter` and `ActivitySource`; SDK/exporter setup and state gauges remain host responsibilities
+- Programmatic reset requests are audited before state mutation; authentication, authorization, audit retention, dashboards and other administrative audit remain host/future responsibilities
+- PostgreSQL audit records are durable; InMemory audit records are process-local and volatile
 
 ## Release Gate
 
@@ -41,7 +41,7 @@ package release, separately verify that:
 - the product decisions are recorded in [ADR-015](./adr/ADR-015-JobGuardian-1.0-Contract-Ratification.md)
 - all package artifacts have the intended `0.9.0-preview1` version and metadata
 - a clean consumer application can restore the published packages and compile the documented setup
-- PostgreSQL schema scripts V001 and V002 are available to package consumers and applied in order
+- PostgreSQL schema scripts V001, V002, and V003 are available to package consumers and applied in order
 - PostgreSQL schema provisioning and the manual-reset flow have been exercised against the intended deployment environment
 - release notes communicate the breaking change from `Task<bool>` to `Task<ExecutionResult>`
 

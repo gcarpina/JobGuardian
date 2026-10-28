@@ -1,6 +1,7 @@
 using JobGuardian.Abstractions.Models;
 
 using JobGuardian.PostgreSql.Connection;
+using JobGuardian.PostgreSql.AuditStore;
 using JobGuardian.PostgreSql.HistoryStore;
 using JobGuardian.PostgreSql.LeaseStore;
 using JobGuardian.PostgreSql.Options;
@@ -97,6 +98,24 @@ public abstract class PostgreSqlTestBase
                 postgresOptions);
 
         return new PostgreSqlExecutionHistoryStore(
+            connectionFactory);
+    }
+
+    protected PostgreSqlAuditStore CreateAuditStore()
+    {
+        var postgresOptions =
+            Microsoft.Extensions.Options.Options.Create(
+                new PostgreSqlOptions
+                {
+                    ConnectionString =
+                        Fixture.ConnectionString
+                });
+
+        var connectionFactory =
+            new PostgreSqlConnectionFactory(
+                postgresOptions);
+
+        return new PostgreSqlAuditStore(
             connectionFactory);
     }
 }

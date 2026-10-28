@@ -3,6 +3,8 @@ using JobGuardian.Abstractions.Enums;
 using JobGuardian.Abstractions.Models;
 using JobGuardian.Core.DependencyInjection;
 using JobGuardian.Core.Models;
+using JobGuardian.Core.State;
+using JobGuardian.PostgreSql.AuditStore;
 using JobGuardian.PostgreSql.DependencyInjection;
 using JobGuardian.PostgreSql.LeaseStore;
 using JobGuardian.PostgreSql.State;
@@ -32,6 +34,8 @@ services.AddJob<SampleJob>(
 using var provider = services.BuildServiceProvider();
 var leaseStore = provider.GetRequiredService<ILeaseStore>();
 var jobStateRepository = provider.GetRequiredService<IJobStateRepository>();
+var jobStateManager = provider.GetRequiredService<IJobStateManager>();
+var auditStore = provider.GetRequiredService<IAuditStore>();
 var job = provider.GetRequiredService<SampleJob>();
 
 if (leaseStore is not PostgreSqlLeaseStore)
@@ -46,8 +50,14 @@ if (jobStateRepository is not PostgreSqlJobStateRepository)
         "The PostgreSQL package did not register its job state repository.");
 }
 
+if (auditStore is not PostgreSqlAuditStore)
+{
+    throw new InvalidOperationException(
+        "The PostgreSQL package did not register its audit store.");
+}
+
 Console.WriteLine(
-    $"Resolved {leaseStore.GetType().Name} and {jobStateRepository.GetType().Name}.");
+    $"Resolved {leaseStore.GetType().Name}, {jobStateRepository.GetType().Name}, and {auditStore.GetType().Name}.");
 Console.WriteLine(
     $"Resolved registered job {job.GetType().Name}.");
 
@@ -55,12 +65,14 @@ if (!string.IsNullOrWhiteSpace(connectionString))
 {
     await VerifyPostgreSqlAsync(
         leaseStore,
-        jobStateRepository);
+        jobStateRepository,
+        jobStateManager);
 }
 
 static async Task VerifyPostgreSqlAsync(
     ILeaseStore leaseStore,
-    IJobStateRepository jobStateRepository)
+    IJobStateRepository jobStateRepository,
+    IJobStateManager jobStateManager)
 {
     var jobKey =
         new JobKey(
@@ -126,8 +138,22 @@ static async Task VerifyPostgreSqlAsync(
             "The PostgreSQL package did not persist the blocked job state.");
     }
 
+    await jobStateManager.ResetAsync(
+        jobKey,
+        "package-consumer-sample");
+
+    state =
+        await jobStateRepository.GetAsync(
+            jobKey);
+
+    if (state is not null)
+    {
+        throw new InvalidOperationException(
+            "The PostgreSQL package did not reset the blocked job state.");
+    }
+
     Console.WriteLine(
-        "Verified PostgreSQL lease acquire, query, renew, release, and job-state persistence.");
+        "Verified PostgreSQL lease operations, state persistence and audited reset.");
 }
 
 internal sealed class SampleJob : IJob

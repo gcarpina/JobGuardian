@@ -4,6 +4,12 @@
 
 Accepted
 
+This ADR describes a possible standalone dashboard, not a commitment to deliver one in JobGuardian
+1.0. The product boundary in [ADR-015](./ADR-015-JobGuardian-1.0-Contract-Ratification.md)
+excludes a control plane and dashboard from the 1.0 SDK. The SDK records programmatic reset
+requests, but this proposal's broader audit of dashboard operations is not part of 1.0. Revisit this
+design before implementation, including its proposed manual-run and force-takeover operations.
+
 ---
 
 ## Context

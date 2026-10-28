@@ -3,6 +3,7 @@ using JobGuardian.Abstractions.Contracts;
 using JobGuardian.Core.DependencyInjection;
 
 using JobGuardian.PostgreSql.Connection;
+using JobGuardian.PostgreSql.AuditStore;
 using JobGuardian.PostgreSql.LeaseStore;
 using JobGuardian.PostgreSql.HistoryStore;
 using JobGuardian.PostgreSql.Options;
@@ -202,6 +203,23 @@ public sealed class FluentRegistrationTests
             provider.GetRequiredService<IExecutionHistoryStore>();
 
         Assert.IsType<PostgreSqlExecutionHistoryStore>(store);
+    }
+
+    [Fact]
+    public void CT1277_UsePostgreSql_Should_Register_AuditStore()
+    {
+        var services =
+            new ServiceCollection();
+
+        services
+            .AddJobGuardian()
+            .UsePostgreSql("Host=localhost");
+
+        using var provider =
+            services.BuildServiceProvider();
+
+        Assert.IsType<PostgreSqlAuditStore>(
+            provider.GetRequiredService<IAuditStore>());
     }
 
     [Fact]

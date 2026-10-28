@@ -94,6 +94,12 @@ jobs:
               -type f \
               -path '*/contentFiles/any/any/sql/postgresql/V002_execution_history_query_and_recovery.sql' \
               -print -quit)"
+          psql \
+            -v ON_ERROR_STOP=1 \
+            -f "$(find artifacts/nuget-cache/jobguardian.postgresql \
+              -type f \
+              -path '*/contentFiles/any/any/sql/postgresql/V003_audit_actor_optional_display_name.sql' \
+              -print -quit)"
 
       - name: Run package consumer sample (.NET 8)
         run: |
@@ -122,4 +128,9 @@ jobs:
             "$(find artifacts/nuget-cache/jobguardian.postgresql \
               -type f \
               -path '*/contentFiles/any/any/sql/postgresql/V002_execution_history_query_and_recovery.sql' \
+              -print -quit)"
+          cmp sql/postgresql/V003_audit_actor_optional_display_name.sql \
+            "$(find artifacts/nuget-cache/jobguardian.postgresql \
+              -type f \
+              -path '*/contentFiles/any/any/sql/postgresql/V003_audit_actor_optional_display_name.sql' \
               -print -quit)"

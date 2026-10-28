@@ -128,7 +128,7 @@ For distributed execution across multiple application instances, enable the Post
 Reference the `JobGuardian.Core` and `JobGuardian.PostgreSql` packages. Apply the repository
 schema script to the target database before starting the application; the provider does not run
 migrations automatically. The script is available in the repository at
-`sql/postgresql/` and both versioned scripts are included in the `JobGuardian.PostgreSql` package.
+`sql/postgresql/` and all versioned scripts are included in the `JobGuardian.PostgreSql` package.
 NuGet stores it in the package cache; it does not copy the script into the application project or
 apply it automatically. See the [package consumer sample](../dotnet/samples/PackageConsumer/README.md)
 for the cache path and a `psql` example. Against a database and from the repository root, the
@@ -137,15 +137,23 @@ repository scripts must be applied in order:
 ```sh
 psql "$DATABASE_URL" -f sql/postgresql/V001_initial_schema.sql
 psql "$DATABASE_URL" -f sql/postgresql/V002_execution_history_query_and_recovery.sql
+psql "$DATABASE_URL" -f sql/postgresql/V003_audit_actor_optional_display_name.sql
 ```
 
 The PostgreSQL provider also persists execution attempts in
 `jobguardian_execution_history`, including correlation ID, lease-acquisition time, terminal
 `ExecutionOutcome`, outcome reason, and failure category. History writes are best-effort and do not
 replace the callback outcome. A paginated query API is available; history is not deleted
-automatically, so operators must define and execute an appropriate retention policy. The audit
-table remains reserved for future work. Provide `connectionString` from application configuration
-rather than hard-coding credentials.
+automatically, so operators must define and execute an appropriate retention policy.
+
+Programmatic resets require the authenticated actor's stable ID from the hosting application. The
+SDK writes a `ResetJobRequested` audit record before changing state, including idempotent resets.
+If the audit write fails, the reset is not applied; if the subsequent state write fails, the audit
+record remains as evidence of the request, not a claim that the reset completed. PostgreSQL audit
+records are durable and retention is operator-owned. InMemory audit records are process-local and
+lost on restart. JobGuardian does not authenticate or authorize the actor.
+
+Provide `connectionString` from application configuration rather than hard-coding credentials.
 
 By default, JobGuardian generates a correlation ID for each coordinated execution and retains it
 across callback retries. A host can supply its own value by registering an
@@ -299,8 +307,12 @@ var jobStateManager =
     serviceProvider.GetRequiredService<IJobStateManager>();
 
 await jobStateManager.ResetAsync(
-    jobKey);
+    jobKey,
+    actorId);
 ```
+
+`actorId` must be a non-empty stable identifier from the host's authenticated principal. Do not
+accept a caller-supplied identity without host authorization.
 
 State transition:
 
