@@ -4,12 +4,14 @@ using JobGuardian.Core.DependencyInjection;
 
 using JobGuardian.PostgreSql.Connection;
 using JobGuardian.PostgreSql.Contracts;
+using JobGuardian.PostgreSql.AuditStore;
 using JobGuardian.PostgreSql.HistoryStore;
 using JobGuardian.PostgreSql.LeaseStore;
 using JobGuardian.PostgreSql.Options;
 using JobGuardian.PostgreSql.State;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace JobGuardian.PostgreSql.DependencyInjection;
@@ -88,6 +90,11 @@ public static class JobGuardianBuilderExtensions
         builder.Services.AddSingleton<
             IExecutionHistoryStore,
             PostgreSqlExecutionHistoryStore>();
+
+        builder.Services.Replace(
+            ServiceDescriptor.Singleton<
+                IAuditStore,
+                PostgreSqlAuditStore>());
 
         return builder;
     }

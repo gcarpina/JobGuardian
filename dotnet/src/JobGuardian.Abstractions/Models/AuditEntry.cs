@@ -26,9 +26,9 @@ public sealed record AuditEntry
     public required string UserId { get; init; }
 
     /// <summary>
-    /// Gets the display name associated with the actor.
+    /// Gets the display name associated with the actor, when supplied by the host.
     /// </summary>
-    public required string UserName { get; init; }
+    public string? UserName { get; init; }
 
     /// <summary>
     /// Gets the action that was performed.

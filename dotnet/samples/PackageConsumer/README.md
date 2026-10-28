@@ -40,6 +40,7 @@ under `artifacts/nuget-cache`, so the schema path is:
 ```text
 artifacts/nuget-cache/jobguardian.postgresql/<package-version>/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql
 artifacts/nuget-cache/jobguardian.postgresql/<package-version>/contentFiles/any/any/sql/postgresql/V002_execution_history_query_and_recovery.sql
+artifacts/nuget-cache/jobguardian.postgresql/<package-version>/contentFiles/any/any/sql/postgresql/V003_audit_actor_optional_display_name.sql
 ```
 
 To apply it to a new database from the repository root, set `DATABASE_URL` to the intended
@@ -66,7 +67,19 @@ test -n "$SCHEMA_V2_PATH"
 psql "$DATABASE_URL" -f "$SCHEMA_V2_PATH"
 ```
 
-For an existing schema v1 database, apply only V002 before upgrading the application.
+Then apply V003:
+
+```sh
+SCHEMA_V3_PATH=$(find artifacts/nuget-cache/jobguardian.postgresql \
+  -type f \
+  -path '*/contentFiles/any/any/sql/postgresql/V003_audit_actor_optional_display_name.sql' \
+  -print -quit)
+test -n "$SCHEMA_V3_PATH"
+psql "$DATABASE_URL" -f "$SCHEMA_V3_PATH"
+```
+
+For an existing schema v1 database, apply V002 and V003 before upgrading the application. For an
+existing schema v2 database, apply V003.
 
 For a normal consumer restore, NuGet uses the global packages folder. Find its location with
 `dotnet nuget locals global-packages --list`; append

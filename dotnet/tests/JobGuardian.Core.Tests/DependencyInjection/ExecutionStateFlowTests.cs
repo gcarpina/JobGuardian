@@ -131,7 +131,8 @@ public sealed class ExecutionStateFlowTests
             provider.GetRequiredService<ExecutionCounter>().Count);
 
         await stateManager.ResetAsync(
-            jobKey);
+            jobKey,
+            "operator-42");
 
         await hostedService.ExecuteJobsAsync(
             CancellationToken.None);

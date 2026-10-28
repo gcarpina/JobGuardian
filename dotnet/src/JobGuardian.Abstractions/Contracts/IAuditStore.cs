@@ -3,7 +3,7 @@ using JobGuardian.Abstractions.Models;
 namespace JobGuardian.Abstractions.Contracts;
 
 /// <summary>
-/// Persists audit records for actions related to JobGuardian coordination and job operations.
+/// Persists audit records for supported JobGuardian administrative operations.
 /// </summary>
 public interface IAuditStore
 {

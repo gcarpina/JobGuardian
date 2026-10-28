@@ -1,5 +1,6 @@
 using JobGuardian.Abstractions.Contracts;
 using JobGuardian.Abstractions.Models;
+using JobGuardian.Core.Audit;
 using JobGuardian.Core.Contracts;
 using JobGuardian.Core.Execution;
 using JobGuardian.Core.Hosting;
@@ -47,6 +48,10 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<
             IExecutionCorrelationIdProvider,
             DefaultExecutionCorrelationIdProvider>();
+
+        services.TryAddSingleton<
+            IAuditStore,
+            InMemoryAuditStore>();
 
         services.AddSingleton<
             ILeaseStore,

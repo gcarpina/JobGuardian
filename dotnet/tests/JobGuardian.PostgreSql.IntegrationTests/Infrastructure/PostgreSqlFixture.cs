@@ -79,6 +79,29 @@ public sealed class PostgreSqlFixture
                 connection);
 
         await migrationCommand.ExecuteNonQueryAsync();
+
+        var auditMigrationPath =
+            Path.GetFullPath(
+                Path.Combine(
+                    AppContext.BaseDirectory,
+                    "../../../../../../sql/postgresql/V003_audit_actor_optional_display_name.sql"));
+
+        if (!File.Exists(auditMigrationPath))
+        {
+            throw new FileNotFoundException(
+                $"Migration file not found: {auditMigrationPath}");
+        }
+
+        var auditMigration =
+            await File.ReadAllTextAsync(
+                auditMigrationPath);
+
+        await using var auditMigrationCommand =
+            new NpgsqlCommand(
+                auditMigration,
+                connection);
+
+        await auditMigrationCommand.ExecuteNonQueryAsync();
     }
 
     public async Task ResetDatabaseAsync()
@@ -93,6 +116,7 @@ public sealed class PostgreSqlFixture
             new NpgsqlCommand(
                 """
                 TRUNCATE TABLE
+                    jobguardian_audit_log,
                     jobguardian_active_executions,
                     jobguardian_job_state,
                     jobguardian_execution_history;

@@ -79,8 +79,6 @@ This ADR does not apply to:
 - Heartbeat management
 - Distributed coordination
 - Retry policies
-- Future cron scheduling capabilities
-- Future scheduling persistence mechanisms
 
 ---
 
@@ -90,7 +88,6 @@ The following assumptions are considered valid for this decision:
 
 - JobGuardian is primarily a distributed execution framework
 - Scheduling precision is less important than execution correctness
-- Advanced scheduling capabilities may be implemented in future versions
 - External schedulers may be used when advanced scheduling requirements exist
 - Distributed execution and scheduling are separate architectural concerns
 
@@ -261,40 +258,11 @@ Rejected for the first version.
 
 ## Future Evolution
 
-This ADR intentionally limits the scope of the first runtime version.
-
-Future versions may introduce:
-
-### Scheduling Modes
-
-```text
-Fixed Delay
-Fixed Rate
-Cron
-```
-
-### Overlap Policies
-
-```text
-Skip
-Queue
-Parallel
-Cancel Previous
-```
-
-### Additional Capabilities
-
-```text
-Cron parsing
-Trigger persistence
-Misfire handling
-Trigger recovery
-Calendar-based scheduling
-```
-
-The introduction of these capabilities requires dedicated architectural decisions and separate ADRs.
-
-This ADR does not prescribe how future scheduling capabilities must be implemented.
+This ADR does not establish a roadmap commitment to add scheduler capabilities. Fixed-rate and
+cron scheduling, overlap policies, trigger persistence, misfire handling, and calendar-based
+planning are not current JobGuardian product objectives. Applications that need them should use
+their hosting platform or an external scheduler. Reconsider this boundary only if a concrete product
+requirement is raised and separately approved.
 
 ---
 

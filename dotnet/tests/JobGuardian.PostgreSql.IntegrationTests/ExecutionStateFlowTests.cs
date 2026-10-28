@@ -9,6 +9,7 @@ using JobGuardian.PostgreSql.DependencyInjection;
 using JobGuardian.PostgreSql.IntegrationTests.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Npgsql;
 
 namespace JobGuardian.PostgreSql.IntegrationTests;
 
@@ -93,7 +94,35 @@ public sealed class ExecutionStateFlowTests
                 probe.ExecutionCount);
 
             await stateManager.ResetAsync(
-                jobKey);
+                jobKey,
+                "operator-42");
+
+            await using (var connection =
+                         new NpgsqlConnection(Fixture.ConnectionString))
+            {
+                await connection.OpenAsync();
+                await using var command =
+                    new NpgsqlCommand(
+                        """
+                        SELECT COUNT(*)
+                        FROM jobguardian_audit_log
+                        WHERE
+                            tenant_id = @TenantId
+                            AND user_id = @UserId
+                            AND action = 'ResetJobRequested'
+                            AND job_namespace = @JobNamespace
+                            AND job_name = @JobName
+                        """,
+                        connection);
+                command.Parameters.AddWithValue("TenantId", jobKey.TenantId);
+                command.Parameters.AddWithValue("UserId", "operator-42");
+                command.Parameters.AddWithValue("JobNamespace", jobKey.JobNamespace);
+                command.Parameters.AddWithValue("JobName", jobKey.JobName);
+
+                Assert.Equal(
+                    1L,
+                    (long)(await command.ExecuteScalarAsync())!);
+            }
 
             await probe.SecondExecution.WaitAsync(
                 TimeSpan.FromSeconds(10));

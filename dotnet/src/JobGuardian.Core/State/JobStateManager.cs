@@ -18,6 +18,8 @@ public sealed class JobStateManager
 
     private readonly IJobStateRepository _repository;
 
+    private readonly IAuditStore _auditStore;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="JobStateManager"/> class.
     /// </summary>
@@ -30,14 +32,19 @@ public sealed class JobStateManager
     /// <param name="repository">
     /// Stores the current state for each job key.
     /// </param>
+    /// <param name="auditStore">
+    /// Persists audit events for administrative state changes.
+    /// </param>
     public JobStateManager(
         IFailurePolicyEvaluator policyEvaluator,
         IJobStateTransitionEngine transitionEngine,
-        IJobStateRepository repository)
+        IJobStateRepository repository,
+        IAuditStore auditStore)
     {
         _policyEvaluator = policyEvaluator;
         _transitionEngine = transitionEngine;
         _repository = repository;
+        _auditStore = auditStore;
     }
 
     /// <summary>
@@ -138,13 +145,32 @@ public sealed class JobStateManager
     /// <param name="jobKey">
     /// The logical identity of the job to reset.
     /// </param>
+    /// <param name="actorId">
+    /// Stable identifier of the authenticated user or service principal requesting the reset.
+    /// </param>
     /// <param name="cancellationToken">
     /// Token used to cancel the operation.
     /// </param>
     public async Task ResetAsync(
         JobKey jobKey,
+        string actorId,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(actorId);
+
+        await _auditStore.WriteAsync(
+            new AuditEntry
+            {
+                AuditId = Guid.NewGuid(),
+                TenantId = jobKey.TenantId,
+                TimestampUtc = DateTimeOffset.UtcNow,
+                UserId = actorId,
+                Action = "ResetJobRequested",
+                JobNamespace = jobKey.JobNamespace,
+                JobName = jobKey.JobName
+            },
+            cancellationToken);
+
         await _repository.SetAsync(
             jobKey,
             JobState.Eligible,

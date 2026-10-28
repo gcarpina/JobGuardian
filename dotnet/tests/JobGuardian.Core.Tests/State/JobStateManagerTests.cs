@@ -84,7 +84,8 @@ public sealed class JobStateManagerTests
             new JobStateManager(
                 evaluator,
                 transitionEngine,
-                repository);
+                repository,
+                Substitute.For<IAuditStore>());
 
         var jobKey =
             new JobKey(
@@ -151,7 +152,8 @@ public sealed class JobStateManagerTests
             new JobStateManager(
                 evaluator,
                 transitionEngine,
-                repository);
+                repository,
+                Substitute.For<IAuditStore>());
 
         var jobKey =
             new JobKey(
@@ -218,7 +220,8 @@ public sealed class JobStateManagerTests
             new JobStateManager(
                 evaluator,
                 transitionEngine,
-                repository);
+                repository,
+                Substitute.For<IAuditStore>());
 
         var jobKey =
             new JobKey(
@@ -326,7 +329,8 @@ public sealed class JobStateManagerTests
             new JobStateManager(
                 new FailurePolicyEvaluator(),
                 new JobStateTransitionEngine(),
-                repository);
+                repository,
+                Substitute.For<IAuditStore>());
         var jobKey =
             new JobKey(
                 "tenant-a",
@@ -354,6 +358,7 @@ public sealed class JobStateManagerTests
         return new JobStateManager(
             Substitute.For<IFailurePolicyEvaluator>(),
             Substitute.For<IJobStateTransitionEngine>(),
-            repository);
+            repository,
+            Substitute.For<IAuditStore>());
     }
 }

@@ -13,8 +13,12 @@ The framework provides:
 - failure policy management
 - runtime state management
 - persistent blocked state handling
-- manual reset workflows
-- optional persistence providers
+- programmatic reset of blocked jobs
+- audit records for programmatic reset requests
+- bounded callback retries
+- queryable execution history and abandoned-execution recovery
+- OpenTelemetry metrics and traces through `Meter` and `ActivitySource`
+- InMemory and PostgreSQL providers
 
 JobGuardian is designed for workloads where concurrent execution of the same logical job must be prevented.
 
@@ -690,10 +694,12 @@ Implementation:
 ```csharp
 await jobStateManager.ResetAsync(
     jobKey,
+    actorId,
     cancellationToken);
 ```
 
-Manual reset is intentionally explicit and operator-driven.
+Manual reset is intentionally explicit and operator-driven. `actorId` is the stable identity
+resolved by the host's authentication and authorization layer; each accepted request is audited.
 
 ---
 
@@ -1105,35 +1111,45 @@ The current MVP includes:
 - failure policy management
 - runtime state management
 - persistent blocked states
-- manual reset workflows
+- programmatic reset of blocked jobs
+- bounded callback retries
+- queryable execution history, including abandoned-execution recovery
+- audit records for programmatic reset requests
+- host-provided or generated correlation IDs
+- OpenTelemetry metrics and traces through `Meter` and `ActivitySource`
 - InMemory provider
 - PostgreSQL provider
 - fluent provider registration
-- automated integration testing
+- automated Core and PostgreSQL integration testing on .NET 8 and .NET 10
 
-Current automated test coverage:
+Current automated test suite:
 
 ```text
-106 tests
+153 tests per target framework
 ```
 
 ---
 
 # Future Evolution
 
-Potential post-MVP capabilities include:
+The following capabilities are not part of the current SDK release and require separate scope and
+product decisions:
 
-- execution history
-- audit trail
+- A standalone operational control plane or dashboard, including administrative audit; see
+  [ADR-004](../adr/ADR-004-Dashboard-Architecture.md) and [ADR-015](../adr/ADR-015-JobGuardian-1.0-Contract-Ratification.md)
+- Audit of administrative actions other than SDK reset requests
 - SQL Server provider
 - MySQL provider
-- OpenTelemetry integration
-- metrics exporters
-- operational dashboards
+- Java and Python SDK implementations of Protocol v1
 - execution analytics
 - additional persistence providers
 
-These capabilities are intentionally outside the current MVP scope.
+The .NET SDK already emits OpenTelemetry-compatible metrics and traces. Hosts own listener,
+exporter, and endpoint configuration; a built-in exporter is not part of the SDK scope.
+
+JobGuardian is not intended to become a scheduler. Schedule definition and calendar semantics
+remain the responsibility of the hosting platform or an external scheduler; see
+[ADR-010](../adr/ADR-010-Runtime-Scheduling-Strategy.md).
 
 ---
 

@@ -214,7 +214,7 @@ CREATE TABLE jobguardian_audit_log
 );
 
 COMMENT ON TABLE jobguardian_audit_log
-IS 'Administrative and operational audit trail';
+IS 'Audit records for supported JobGuardian administrative requests';
 
 COMMENT ON COLUMN jobguardian_audit_log.audit_id
 IS 'Audit entry identifier';
@@ -229,10 +229,10 @@ COMMENT ON COLUMN jobguardian_audit_log.user_id
 IS 'Authenticated user identifier';
 
 COMMENT ON COLUMN jobguardian_audit_log.user_name
-IS 'Authenticated user display name';
+IS 'Actor display name when supplied by the hosting application';
 
 COMMENT ON COLUMN jobguardian_audit_log.action
-IS 'RunNow, ResetFailureState, ForceReleaseLease, ForceTakeoverLease or other administrative action';
+IS 'ResetJobRequested for programmatic SDK reset requests';
 
 COMMENT ON COLUMN jobguardian_audit_log.job_namespace
 IS 'Affected job namespace';

@@ -2,12 +2,14 @@ using JobGuardian.Abstractions.Contracts;
 
 using JobGuardian.PostgreSql.Connection;
 using JobGuardian.PostgreSql.Contracts;
+using JobGuardian.PostgreSql.AuditStore;
 using JobGuardian.PostgreSql.HistoryStore;
 using JobGuardian.PostgreSql.LeaseStore;
 using JobGuardian.PostgreSql.Options;
 using JobGuardian.PostgreSql.State;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace JobGuardian.PostgreSql.DependencyInjection;
 
@@ -50,6 +52,11 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<
             IExecutionHistoryStore,
             PostgreSqlExecutionHistoryStore>();
+
+        services.Replace(
+            ServiceDescriptor.Singleton<
+                IAuditStore,
+                PostgreSqlAuditStore>());
 
         return services;
     }

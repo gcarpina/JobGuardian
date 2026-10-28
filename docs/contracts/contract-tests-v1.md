@@ -80,14 +80,17 @@ errors.
 | CT040 | Host listens to JobGuardian ActivitySource and Meter | Execution traces and documented metrics are observable |
 | CT041 | Metric labels are inspected | No tenant/job/execution/correlation IDs or error messages appear as metric attributes |
 | CT042 | No telemetry exporter is configured by host | JobGuardian opens no telemetry endpoint and sends no telemetry independently |
-| CT043 | Audit, OIDC/RBAC, dashboard, manual-run, or force-takeover capability is requested | These are not represented as SDK 1.0 capabilities |
+| CT043 | OIDC/RBAC, dashboard, manual-run, or force-takeover capability is requested | These are not represented as SDK 1.0 capabilities |
 | CT044 | SDK conformance is declared | Claim is backed by an implementation and passing tests; .NET is the only 1.0 conformant SDK |
+| CT045 | Reset audit persistence fails | The reset is not applied and the persistence error is propagated |
+| CT046 | Reset is accepted, including when already eligible | `ResetJobRequested` is persisted first with tenant, job, actor ID, and UTC timestamp |
+| CT047 | Actor ID is empty or whitespace | The request is rejected before audit or state persistence |
 
 ## Existing v1 contract scenarios retained
 
 CT001–CT017 from earlier draft revisions are retained where their intent is represented above.
-Draft CT012 Audit Logging is explicitly outside the SDK conformance suite; an application that
-exposes administrative operations is responsible for authentication, authorization, and audit.
+General administrative audit, dashboard actions, and authentication/authorization are outside the
+SDK conformance suite. The SDK reset-request audit behavior is covered by CT045–CT047.
 
 ## Conformance result
 
