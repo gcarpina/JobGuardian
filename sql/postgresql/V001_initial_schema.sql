@@ -1,3 +1,6 @@
+-- Complete bootstrap schema for a new database; not an upgrade or rerunnable script.
+BEGIN;
+
 CREATE TABLE jobguardian_active_executions
 (
     tenant_id                  VARCHAR(100) NOT NULL,
@@ -113,7 +116,10 @@ CREATE TABLE jobguardian_execution_history
     started_at_utc             TIMESTAMPTZ NOT NULL,
     ended_at_utc               TIMESTAMPTZ NULL,
 
+    lease_acquired_at_utc      TIMESTAMPTZ NULL,
+
     outcome                    VARCHAR(50) NULL,
+    outcome_reason             VARCHAR(100) NULL,
 
     failure_category           VARCHAR(50) NULL,
 
@@ -174,7 +180,13 @@ COMMENT ON COLUMN jobguardian_execution_history.ended_at_utc
 IS 'UTC timestamp when the execution attempt ended';
 
 COMMENT ON COLUMN jobguardian_execution_history.outcome
-IS 'ExecutionOutcome value: Succeeded, Failed, Cancelled, LeaseLost or Skipped';
+IS 'ExecutionOutcome value: Succeeded, Failed, Cancelled, LeaseLost, Skipped or Abandoned';
+
+COMMENT ON COLUMN jobguardian_execution_history.lease_acquired_at_utc
+IS 'UTC timestamp when this execution acquired its lease; used to distinguish abandoned work from pre-acquisition requests';
+
+COMMENT ON COLUMN jobguardian_execution_history.outcome_reason
+IS 'Stable reason code, for example LeaseBusy, Blocked or LeaseExpiredWithoutOutcome';
 
 COMMENT ON COLUMN jobguardian_execution_history.failure_category
 IS 'ApplicationError, LeaseLost, Cancelled or InfrastructureFailure';
@@ -201,7 +213,7 @@ CREATE TABLE jobguardian_audit_log
     timestamp_utc              TIMESTAMPTZ NOT NULL,
 
     user_id                    VARCHAR(200) NOT NULL,
-    user_name                  VARCHAR(500) NOT NULL,
+    user_name                  VARCHAR(500) NULL,
 
     action                     VARCHAR(100) NOT NULL,
 
@@ -247,19 +259,31 @@ COMMENT ON COLUMN jobguardian_audit_log.details
 IS 'Action specific JSON payload';
 
 
-CREATE INDEX ix_jgh_job
-ON jobguardian_execution_history
-(
-    tenant_id,
-    job_namespace,
-    job_name
-);
-
 CREATE INDEX ix_jgh_started_at
 ON jobguardian_execution_history
 (
     started_at_utc DESC
 );
+
+CREATE INDEX ix_jobguardian_execution_history_job_started
+ON jobguardian_execution_history
+(
+    tenant_id,
+    job_namespace,
+    job_name,
+    started_at_utc DESC,
+    execution_id DESC
+);
+
+CREATE INDEX ix_jobguardian_execution_history_incomplete_acquired
+ON jobguardian_execution_history
+(
+    tenant_id,
+    job_namespace,
+    job_name
+)
+WHERE outcome IS NULL
+    AND lease_acquired_at_utc IS NOT NULL;
 
 CREATE INDEX ix_jgh_outcome
 ON jobguardian_execution_history
@@ -290,3 +314,5 @@ ON jobguardian_audit_log
 (
     user_id
 );
+
+COMMIT;

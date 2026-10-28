@@ -4,7 +4,7 @@
 
 JobGuardian is a cloud-native friendly distributed job coordination framework.
 
-Its primary objective is to guarantee single-owner execution of recurring jobs across multiple application instances.
+Its primary objective is to coordinate a single valid lease owner for recurring jobs across multiple application instances.
 
 The framework provides:
 
@@ -63,7 +63,9 @@ Result:
 Duplicate invoices
 ```
 
-JobGuardian ensures that only a single instance owns and executes a job at any given time.
+JobGuardian coordinates a single valid lease owner per job at a time. It does not guarantee
+exactly-once processing and cannot prevent duplicate side effects if a callback continues after
+losing its lease.
 
 ---
 
@@ -380,7 +382,7 @@ Execution Skipped
 
 # Lease Management
 
-The lease management subsystem guarantees single-owner execution.
+The lease management subsystem coordinates exclusive valid lease ownership.
 
 Responsibilities:
 
@@ -1167,4 +1169,4 @@ JobGuardian combines:
 
 to provide a reliable foundation for recurring workload execution in distributed environments.
 
-The framework intentionally focuses on execution coordination rather than scheduling, allowing teams to combine JobGuardian with their preferred scheduling mechanisms while maintaining strict ownership guarantees.
+The framework intentionally focuses on execution coordination rather than scheduling, allowing teams to combine JobGuardian with their preferred scheduling mechanisms while maintaining exclusive valid lease ownership. Applications remain responsible for idempotent side effects and cooperative cancellation.

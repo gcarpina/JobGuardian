@@ -2,40 +2,56 @@
 
 Notable changes to JobGuardian are documented here.
 
-## [0.9.0-preview1] - Unreleased
+## [0.9.1-preview1] - Unreleased
+
+This is a preview release, not a stable 1.0 release. See the
+[preview release notes](./docs/RELEASE-NOTES-0.9.1-preview1.md) for consumer-facing highlights,
+breaking changes, setup guidance, and known limitations.
 
 ### Added
 
-- Ratified the .NET 1.0 protocol and contract-test behavior, including execution outcomes, recovery, bounded retries, correlation, telemetry, and framework support policy
-- PostgreSQL execution-history queries with tenant/job, time-range, outcome, and pagination filters
-- Recovery classification of prior lease-acquired executions without a terminal history outcome
-- Host-provided execution correlation IDs, with generated IDs when the host does not supply one
-- Audit every accepted programmatic reset request before applying the state change; actor ID is required and supplied by the host
-- Contract and integration tests for recovery, history queries, correlation, and the ratified outcomes
+- PostgreSQL execution-history queries filtered by tenant/job, time range, and outcome, with pagination
+- Recovery classification for lease-acquired executions without a terminal history outcome
+- Optional host-provided execution correlation IDs, with generated IDs when none are supplied
+- Auditing of accepted programmatic reset requests before state mutation; a stable actor ID is required from the host
+- A single transactional PostgreSQL bootstrap schema for new databases
+- Contract and integration tests for recovery, history queries, correlation, reset auditing, and execution outcomes
 
 ### Changed
 
-- `RequireManualReset` now blocks after `Failed`, `LeaseLost`, and recovered `Abandoned` outcomes; ordinary `Skipped` and `Cancelled` outcomes do not block
-- Lease and heartbeat durations are validated before execution, and lease-expiry comparisons use the same inclusive boundary in memory and PostgreSQL
-- PostgreSQL schema versions 2 and 3 add recovery/query support and actor-ID-only reset audit records
-- CI measures coverage and requires line coverage strictly above 80% per production package, plus branch coverage strictly above 80% where applicable
-- JobGuardian continues compiling and testing .NET 8 for now, but does not promise fixes after Microsoft's end-of-support date; removing that target requires a prior product decision
+- Ratified the .NET protocol and contract-test behavior for execution outcomes, recovery, bounded retries, correlation, telemetry, and framework support policy
+- `RequireManualReset` blocks after `Failed`, `LeaseLost`, and recovered `Abandoned` outcomes; ordinary `Skipped` and `Cancelled` outcomes do not block
+- Lease and heartbeat durations are validated before execution, and memory/PostgreSQL lease-expiry comparisons use the same inclusive boundary
+- .NET 10 is the recommended runtime. .NET 8 remains a conditional build and test target while technically compatible; fixes after Microsoft's end-of-support date are not promised
+- CI enforces line coverage above 80% for each production package and branch coverage above 80% where applicable
 
-### Migration
+### Breaking Changes
 
-Apply `V002_execution_history_query_and_recovery.sql` and
-`V003_audit_actor_optional_display_name.sql` after `V001_initial_schema.sql` on new databases.
-Apply V002 and V003 to existing databases before deploying this version. JobGuardian does not apply
-migrations automatically; see the PackageConsumer guide for applying the scripts from the NuGet
-package.
+- `IJobExecutionCoordinator.ExecuteAsync` returns `ExecutionResult` instead of `bool`
+- `IJobStateManager.ResetAsync` requires a stable actor ID supplied by the host
+- `IExecutionHistoryStore` adds required paginated-query and lease-acquisition/recovery operations; custom implementations must be updated
+- Applications processing persisted execution history should handle the `Abandoned` outcome and `ExecutionOutcomeReason` values
 
-The reset API now requires the stable actor ID supplied by the hosting application. This is a
-breaking change for callers of `IJobStateManager.ResetAsync`; authentication and authorization remain
-host responsibilities. Audit persistence occurs before the state update; a failed audit write
-prevents the reset, while a later state-write failure leaves a truthful `ResetJobRequested` event.
-PostgreSQL requires V003 to allow an omitted actor display name. InMemory audit records are volatile.
+### PostgreSQL Setup and Upgrade
 
-This version adds required members to `IExecutionHistoryStore`. Consumers with custom history-store
-implementations must implement the paginated query and lease-acquisition/recovery operations.
-Applications that persist execution outcomes should account for the new `Abandoned` outcome and
-`ExecutionOutcomeReason` values when reading or processing history.
+For a new database, apply `V001_initial_schema.sql` from the package. It creates the complete schema
+in one transaction; JobGuardian does not apply it automatically. This preview does not provide an
+upgrade path from databases initialized by earlier previews. The script is not rerunnable; use a
+fresh database unless you have independently prepared and validated a data-preserving migration.
+See the [PackageConsumer guide](./dotnet/samples/PackageConsumer/README.md) for locating the
+packaged SQL file.
+
+### Reset Audit Semantics
+
+The reset API requires a stable actor ID supplied by the hosting application. Authentication and
+authorization remain host responsibilities. Audit persistence occurs before the state update: a
+failed audit write prevents the reset, while a later state-write failure leaves a truthful
+`ResetJobRequested` event. The event records an accepted request, not proof that the state change
+completed. PostgreSQL audit records are durable; InMemory records are volatile. Retention and
+deletion remain host/operator responsibilities.
+
+### Release Validation
+
+- Added package-consumer validation in CI for restore, compilation, dependency injection, and PostgreSQL operations against the packaged schema
+- Added a PostgreSQL integration test that checks the bootstrap schema shape against the initialized database
+- Added a formal preview release checklist in [MVP exit criteria](./docs/MVP-EXIT-CRITERIA.md#release-checklist-preview-gate)

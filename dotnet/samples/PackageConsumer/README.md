@@ -1,7 +1,7 @@
 # Package consumer sample
 
 This console application demonstrates restoring and using the NuGet package API for JobGuardian.
-It targets .NET 8 and .NET 10 and uses the package version declared in
+It targets .NET 8 and .NET 10, with .NET 10 recommended, and uses the package version declared in
 `dotnet/Directory.Build.props`. It verifies that the PostgreSQL provider and a registered job can
 be resolved from dependency injection.
 
@@ -15,7 +15,7 @@ dotnet restore dotnet/samples/PackageConsumer/JobGuardian.PackageConsumer.csproj
   --source https://api.nuget.org/v3/index.json \
   --packages ./artifacts/nuget-cache
 dotnet run --project dotnet/samples/PackageConsumer/JobGuardian.PackageConsumer.csproj \
-  --configuration Release --no-restore
+  --configuration Release --framework net10.0 --no-restore
 ```
 
 Without `JOBGUARDIAN_POSTGRESQL_CONNECTION_STRING`, the sample validates package restore,
@@ -28,7 +28,7 @@ apply the schema as described below, set the variable to an Npgsql connection st
 
 ```sh
 dotnet run --project dotnet/samples/PackageConsumer/JobGuardian.PackageConsumer.csproj \
-  --configuration Release --no-restore
+  --configuration Release --framework net10.0 --no-restore
 ```
 
 ## Applying the PostgreSQL schema
@@ -39,8 +39,6 @@ under `artifacts/nuget-cache`, so the schema path is:
 
 ```text
 artifacts/nuget-cache/jobguardian.postgresql/<package-version>/contentFiles/any/any/sql/postgresql/V001_initial_schema.sql
-artifacts/nuget-cache/jobguardian.postgresql/<package-version>/contentFiles/any/any/sql/postgresql/V002_execution_history_query_and_recovery.sql
-artifacts/nuget-cache/jobguardian.postgresql/<package-version>/contentFiles/any/any/sql/postgresql/V003_audit_actor_optional_display_name.sql
 ```
 
 To apply it to a new database from the repository root, set `DATABASE_URL` to the intended
@@ -56,30 +54,9 @@ psql "$DATABASE_URL" \
   -f "$SCHEMA_PATH"
 ```
 
-For a new database, run the V001 command above, then apply V002:
-
-```sh
-SCHEMA_V2_PATH=$(find artifacts/nuget-cache/jobguardian.postgresql \
-  -type f \
-  -path '*/contentFiles/any/any/sql/postgresql/V002_execution_history_query_and_recovery.sql' \
-  -print -quit)
-test -n "$SCHEMA_V2_PATH"
-psql "$DATABASE_URL" -f "$SCHEMA_V2_PATH"
-```
-
-Then apply V003:
-
-```sh
-SCHEMA_V3_PATH=$(find artifacts/nuget-cache/jobguardian.postgresql \
-  -type f \
-  -path '*/contentFiles/any/any/sql/postgresql/V003_audit_actor_optional_display_name.sql' \
-  -print -quit)
-test -n "$SCHEMA_V3_PATH"
-psql "$DATABASE_URL" -f "$SCHEMA_V3_PATH"
-```
-
-For an existing schema v1 database, apply V002 and V003 before upgrading the application. For an
-existing schema v2 database, apply V003.
+The script creates the complete schema for a new database in one transaction. It is not
+re-runnable and does not upgrade databases created by earlier previews. Use a fresh database for
+this preview unless you have separately prepared and tested a data-preserving migration.
 
 For a normal consumer restore, NuGet uses the global packages folder. Find its location with
 `dotnet nuget locals global-packages --list`; append

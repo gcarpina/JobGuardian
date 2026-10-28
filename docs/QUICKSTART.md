@@ -6,7 +6,7 @@ This guide shows how to create and run a job with JobGuardian in a few minutes.
 
 # Prerequisites
 
-- .NET 8 or .NET 10
+- .NET 10 (recommended); .NET 8 remains a target while technically compatible
 - Dependency Injection
 - Hosted Services
 
@@ -136,9 +136,11 @@ repository scripts must be applied in order:
 
 ```sh
 psql "$DATABASE_URL" -f sql/postgresql/V001_initial_schema.sql
-psql "$DATABASE_URL" -f sql/postgresql/V002_execution_history_query_and_recovery.sql
-psql "$DATABASE_URL" -f sql/postgresql/V003_audit_actor_optional_display_name.sql
 ```
+
+`V001_initial_schema.sql` creates the complete schema for a new database in one transaction. It is
+not a rerunnable upgrade script and must not be applied to a database already initialized by an
+earlier preview. The current preview does not provide an upgrade path for those databases.
 
 The PostgreSQL provider also persists execution attempts in
 `jobguardian_execution_history`, including correlation ID, lease-acquisition time, terminal
