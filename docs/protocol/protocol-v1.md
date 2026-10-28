@@ -157,16 +157,16 @@ History records the protocol and persistence schema version used for the executi
 schema scripts are versioned and must be applied in order. A provider upgrade must not silently
 claim compatibility with an unapplied schema migration.
 
-JobGuardian distinguishes build compatibility from framework servicing. It does not promise
+JobGuardian recommends `net10.0` for consumers. The packages continue to target and test `net8.0`
+while it remains technically compatible with the code, dependencies, and build tooling; this
+compatibility may be reconsidered if the target causes problems. JobGuardian does not promise
 security or maintenance fixes for a target framework after Microsoft's end-of-support date.
-`net8.0` continues to be compiled and tested for now, including after Microsoft's support ends on
-2026-11-10. This build compatibility does not extend Microsoft's servicing or create a JobGuardian
-security-fix commitment. `net10.0` is currently supported by Microsoft through 2028-11-14.
+Microsoft support for `net8.0` ends on 2026-11-10 and for `net10.0` is currently scheduled through
+2028-11-14.
 
 The lifecycle dates reflect Microsoft's policy as of 2026-10-27 and must be rechecked before each
-release. Removing `net8.0` from builds and tests is a separate product decision and must be discussed
-before the target is removed. Consumers should move to a Microsoft-supported runtime to receive
-Microsoft security and maintenance updates.
+release. Consumers should use a Microsoft-supported runtime to receive Microsoft security and
+maintenance updates.
 
 ## 10. Conformance
 

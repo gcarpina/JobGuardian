@@ -8,7 +8,9 @@ Status: Ratified
 
 These tests define observable Protocol v1 behavior independent of SDK-specific API names. A
 conformance suite must run against each supported persistence provider and SDK implementation.
-For the JobGuardian 1.0 release, only .NET 8/.NET 10 with PostgreSQL is declared conformant.
+For the JobGuardian 1.0 release, only the .NET SDK with PostgreSQL is declared conformant. .NET 10
+is the recommended runtime; .NET 8 remains in the build and test matrix while technically
+compatible.
 In-memory tests provide single-process behavioral coverage, not distributed-provider conformance.
 
 Each persistence test starts from an isolated database state. Time-boundary tests use a provider
@@ -41,7 +43,7 @@ errors.
 | CT008 | Prior acquired execution has no persisted terminal outcome; a later owner acquires after expiry | Prior history is updated to terminal `Abandoned`; recovery does not claim the process is dead |
 | CT009 | `FailurePolicy = Ignore` after a failure | The next attempt remains eligible |
 | CT010 | `RequireManualReset` after `Failed`, `LeaseLost`, or `Abandoned` | Subsequent attempt is blocked as `Skipped`/`Blocked` until programmatic reset |
-| CT011 | Programmatic reset of blocked state | Job becomes eligible; authentication/audit are outside the SDK contract |
+| CT011 | Programmatic reset of blocked state | Job becomes eligible; host authentication and authorization are outside the SDK contract; reset audit behavior is covered by CT045–CT047 |
 | CT020 | Cancellation during callback or shutdown | `Cancelled`; no further callback retry occurs |
 | CT021 | Heartbeat cannot renew/confirm ownership | Callback is cooperatively cancelled; final result is `LeaseLost`; no retry occurs |
 | CT022 | Busy lease versus blocked job | Both are `Skipped`, with distinct reasons `LeaseBusy` and `Blocked`; callback is not invoked |

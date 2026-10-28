@@ -17,16 +17,6 @@
           PackagePath="contentFiles/any/any/sql/postgresql/V001_initial_schema.sql"
           BuildAction="None"
           PackageCopyToOutput="false" />
-    <None Include="../../../sql/postgresql/V002_execution_history_query_and_recovery.sql"
-          Pack="true"
-          PackagePath="contentFiles/any/any/sql/postgresql/V002_execution_history_query_and_recovery.sql"
-          BuildAction="None"
-          PackageCopyToOutput="false" />
-    <None Include="../../../sql/postgresql/V003_audit_actor_optional_display_name.sql"
-          Pack="true"
-          PackagePath="contentFiles/any/any/sql/postgresql/V003_audit_actor_optional_display_name.sql"
-          BuildAction="None"
-          PackageCopyToOutput="false" />
   </ItemGroup>
 
   <PropertyGroup>

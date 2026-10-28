@@ -27,50 +27,38 @@ public sealed class ReleaseTests : PostgreSqlTestBase
     {
         await Fixture.ResetDatabaseAsync();
 
-        // Arrange
-
         var leaseStore =
             CreateLeaseStore();
 
         var execution1 =
-            CreateExecution(
-                "owner-a");
+            CreateExecution("owner-a");
 
         var execution2 =
-            CreateExecution(
-                "owner-b");
+            CreateExecution("owner-b");
 
         var acquired =
             await leaseStore.TryAcquireAsync(
                 execution1,
                 LeaseDuration);
 
-        Assert.True(
-            acquired);
-
-        // Act
+        Assert.True(acquired);
 
         var released =
             await leaseStore.ReleaseAsync(
                 execution1.JobKey,
                 execution1.ExecutionId);
 
-        // Assert
-
-        Assert.True(
-            released);
+        Assert.True(released);
 
         var reacquired =
             await leaseStore.TryAcquireAsync(
                 execution2,
                 LeaseDuration);
 
-        Assert.True(
-            reacquired);
+        Assert.True(reacquired);
 
         await using var connection =
-            new NpgsqlConnection(
-                Fixture.ConnectionString);
+            new NpgsqlConnection(Fixture.ConnectionString);
 
         await connection.OpenAsync();
 
@@ -93,13 +81,8 @@ public sealed class ReleaseTests : PostgreSqlTestBase
                     JobName
                 });
 
-        Assert.Equal(
-            execution2.ExecutionId,
-            (Guid)row.execution_id);
-
-        Assert.Equal(
-            execution2.OwnerId,
-            (string)row.owner_id);
+        Assert.Equal(execution2.ExecutionId, (Guid)row.execution_id);
+        Assert.Equal(execution2.OwnerId, (string)row.owner_id);
     }
 
     [Fact]
@@ -107,40 +90,31 @@ public sealed class ReleaseTests : PostgreSqlTestBase
     {
         await Fixture.ResetDatabaseAsync();
 
-        // Arrange
-
         var leaseStore =
             CreateLeaseStore();
 
         var execution1 =
-            CreateExecution(
-                "owner-a");
+            CreateExecution("owner-a");
 
         var execution2 =
-            CreateExecution(
-                "owner-b");
+            CreateExecution("owner-b");
 
         var firstAcquire =
             await leaseStore.TryAcquireAsync(
                 execution1,
                 LeaseDuration);
 
-        Assert.True(
-            firstAcquire);
+        Assert.True(firstAcquire);
 
         await using var connection =
-            new NpgsqlConnection(
-                Fixture.ConnectionString);
+            new NpgsqlConnection(Fixture.ConnectionString);
 
         await connection.OpenAsync();
-
-        // Forza scadenza lease
 
         await connection.ExecuteAsync(
             """
             UPDATE jobguardian_active_executions
-            SET lease_until_utc =
-                CURRENT_TIMESTAMP - INTERVAL '1 minute'
+            SET lease_until_utc = CURRENT_TIMESTAMP - INTERVAL '1 minute'
             WHERE
                 tenant_id = @TenantId
                 AND job_namespace = @JobNamespace
@@ -158,20 +132,14 @@ public sealed class ReleaseTests : PostgreSqlTestBase
                 execution2,
                 LeaseDuration);
 
-        Assert.True(
-            secondAcquire);
-
-        // Act
+        Assert.True(secondAcquire);
 
         var released =
             await leaseStore.ReleaseAsync(
                 execution1.JobKey,
                 execution1.ExecutionId);
 
-        // Assert
-
-        Assert.False(
-            released);
+        Assert.False(released);
 
         var row =
             await connection.QuerySingleAsync<dynamic>(
@@ -192,12 +160,47 @@ public sealed class ReleaseTests : PostgreSqlTestBase
                     JobName
                 });
 
-        Assert.Equal(
-            execution2.ExecutionId,
-            (Guid)row.execution_id);
+        Assert.Equal(execution2.ExecutionId, (Guid)row.execution_id);
+        Assert.Equal(execution2.OwnerId, (string)row.owner_id);
+    }
 
-        Assert.Equal(
-            execution2.OwnerId,
-            (string)row.owner_id);
+    [Fact]
+    public async Task CT023_Released_Package_Schema_And_Consumer_Compatibility_Should_Pass()
+    {
+        var schemaPath =
+            Path.GetFullPath(
+                Path.Combine(
+                    AppContext.BaseDirectory,
+                    "../../../../../../sql/postgresql/V001_initial_schema.sql"));
+
+        Assert.True(
+            File.Exists(schemaPath),
+            $"Schema file not found at: {schemaPath}");
+
+        var schema =
+            await File.ReadAllTextAsync(schemaPath);
+
+        Assert.Contains("jobguardian_active_executions", schema, StringComparison.Ordinal);
+        Assert.Contains("jobguardian_execution_history", schema, StringComparison.Ordinal);
+        Assert.Contains("jobguardian_audit_log", schema, StringComparison.Ordinal);
+
+        await using var connection =
+            new NpgsqlConnection(Fixture.ConnectionString);
+
+        await connection.OpenAsync();
+
+        var tables =
+            (await connection.QueryAsync<string>(
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name LIKE 'jobguardian_%'
+                ORDER BY table_name
+                """)).ToArray();
+
+        Assert.Contains("jobguardian_active_executions", tables);
+        Assert.Contains("jobguardian_execution_history", tables);
+        Assert.Contains("jobguardian_audit_log", tables);
     }
 }

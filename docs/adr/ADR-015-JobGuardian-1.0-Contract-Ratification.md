@@ -63,11 +63,12 @@ claim conformance at the 1.0 release.
     records tenant, job, UTC timestamp, and the required stable actor ID supplied by the host;
     display name and free-form reason are not required. The event records a request, not proof that
     the state change completed. PostgreSQL audit records are durable; InMemory records are volatile
-11. **Framework support:** distinguish build compatibility from support. Continue compiling and
-    testing `net8.0` after Microsoft's end-of-support date for now, but do not promise security or
-    maintenance fixes for it after 2026-11-10. As of 2026-10-27, Microsoft supports `net10.0`
-    through 2028-11-14. Reassess the target matrix against Microsoft's lifecycle before each
-    release. Any removal of `net8.0` from builds and tests requires a prior product decision
+11. **Framework support:** recommend `net10.0` to consumers. Continue compiling and testing
+    `net8.0` while it remains technically compatible with the code, dependencies, and build
+    tooling; reconsider it if it causes problems. Do not promise security or maintenance fixes for
+    `net8.0` after Microsoft's end-of-support date of 2026-11-10. As of 2026-10-27, Microsoft
+    supports `net10.0` through 2028-11-14. Reassess the target matrix against Microsoft's lifecycle
+    before each release
 
 ## Rationale and alternatives
 
@@ -87,10 +88,9 @@ claim conformance at the 1.0 release.
 - **Audit reset requests before state changes:** this fails closed when audit persistence is
   unavailable and leaves a truthful request record even if the subsequent state update fails;
   the two operations are not a shared transaction
-- **Keep .NET 8 build compatibility without extended servicing:** this preserves short-term
-  consumer compatibility while avoiding a promise to service an unsupported runtime. Consumers
-  should migrate to a Microsoft-supported framework for security updates; removing the build target
-  remains a separate decision
+- **Recommend .NET 10 while retaining .NET 8 conditionally:** this gives consumers a clear default
+  while preserving compatibility where it remains practical. The .NET 8 target is not a promise of
+  servicing after Microsoft's support ends
 
 ## Consequences and ownership
 
@@ -100,8 +100,9 @@ claim conformance at the 1.0 release.
   Microsoft's end-of-support date, even if the repository continues compiling that target
 - Consumers own audit retention, exporter/endpoint configuration, authentication and authorization,
   and audit of administrative operations other than SDK reset requests
-- PostgreSQL schema v3 requires applying V002 and V003 after the initial schema; migrations are not
-  applied automatically
+- The `0.9.1-preview1` package provides a consolidated initial PostgreSQL schema for new databases;
+  it does not provide an upgrade path from earlier preview schemas or apply schema changes
+  automatically
 - The recovery classification and the original execution outcome are separate facts. Operators
   should treat `Abandoned` as an uncertain completion state and reconcile external side effects
   idempotently

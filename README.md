@@ -2,7 +2,7 @@
 
 A cloud-native friendly framework for distributed job coordination.
 
-JobGuardian provides lease-based execution ownership, failure policy enforcement, runtime state management, and optional persistence providers, allowing multiple application instances to safely coordinate recurring workloads without duplicate execution.
+JobGuardian provides lease-based execution ownership, failure policy enforcement, runtime state management, and optional persistence providers, allowing multiple application instances to coordinate recurring workloads with a single valid lease owner per workload at a time.
 
 ---
 
@@ -48,14 +48,16 @@ Running recurring workloads in distributed environments introduces challenges su
 
 Without coordination, multiple application instances may attempt to execute the same logical workload simultaneously.
 
-JobGuardian guarantees that only one execution owner may execute a workload at any given point in time.
+JobGuardian coordinates a single valid lease owner per workload at a time. It does not guarantee
+exactly-once processing and cannot prevent duplicate side effects if a callback continues after
+losing its lease.
 
 ---
 
 # Key Features
 
 - Distributed lease-based execution ownership
-- Single-owner execution guarantees
+- Lease-based single-owner coordination
 - Heartbeat-based ownership renewal
 - Failure policy enforcement
 - Runtime state management
@@ -199,7 +201,6 @@ services.AddJob<InvoiceSynchronizationJob>(
 ## Protocol
 
 - docs/protocol/protocol-v1.md
-- [1.0 contract gap assessment](./docs/V1-CONTRACT-GAP-ASSESSMENT.md)
 - [ADR-015: 1.0 contract ratification](./docs/adr/ADR-015-JobGuardian-1.0-Contract-Ratification.md)
 
 ## Contract Tests
@@ -223,13 +224,17 @@ Key ADRs:
 
 # Current Status
 
-The MVP implementation is feature-complete for the current preview scope. This does not mean
-that version 1.0 has been released or that the public API is stable. See the
-[MVP exit criteria](./docs/MVP-EXIT-CRITERIA.md) and [changelog](./CHANGELOG.md).
+The current package line is `0.9.1-preview1`. The MVP implementation is feature-complete for the
+preview scope; this does not mean that version 1.0 has been released or that the public API is
+stable. See the
+[preview release notes](./docs/RELEASE-NOTES-0.9.1-preview1.md),
+[MVP exit criteria](./docs/MVP-EXIT-CRITERIA.md), and [changelog](./CHANGELOG.md).
 
-JobGuardian continues compiling and testing .NET 8 for now, but does not promise fixes after
-Microsoft's end-of-support date. Removing .NET 8 from builds and tests requires a prior product
-decision; see the [framework support policy](./docs/protocol/protocol-v1.md#9-versioning-security-and-support).
+.NET 10 is the recommended runtime. The packages continue to target and test .NET 8 while it
+remains technically compatible with the code, dependencies, and build tooling; compatibility may
+be reconsidered if that target causes problems. JobGuardian does not promise fixes for .NET 8 after
+Microsoft's end-of-support date. See the
+[framework support policy](./docs/protocol/protocol-v1.md#9-versioning-security-and-support).
 
 Current MVP capabilities:
 
@@ -248,11 +253,25 @@ Current MVP capabilities:
 Current automated test coverage:
 
 ```text
-148 test cases per target framework
+154 test cases per target framework
 ```
 
 CI also enforces line coverage above 80% for each production package and branch coverage above 80%
 where conditional branches are present. See [contributor testing guidance](./CONTRIBUTING.md).
+
+## Known Limitations
+
+JobGuardian `0.9.1-preview1` is an evaluation preview. It is not a stable 1.0 release, and its
+public API and persistence contract may change in a later preview or release.
+
+- JobGuardian coordinates execution ownership through leases; it does not schedule jobs or guarantee exactly-once processing
+- A callback that continues after lease loss can still produce duplicate external side effects; callbacks should honor cancellation, and consumers should use idempotency or fencing where needed
+- The InMemory provider is process-local and volatile; use PostgreSQL for coordination across application instances and persistent state
+- PostgreSQL schema provisioning is operator-managed. The packaged `V001_initial_schema.sql` is for a new database, is not rerunnable, and does not upgrade databases created by earlier previews
+- Reset auditing records an accepted reset request before the state update; it is not proof that the state change completed. Authentication, authorization, retention, and audit-log access remain host responsibilities
+- InMemory audit records are volatile; PostgreSQL audit records are durable, but retention and deletion remain the operator's responsibility
+- JobGuardian does not include a dashboard, built-in scheduler, or Java/Python SDKs
+- .NET 10 is the recommended runtime. .NET 8 remains a conditional build and test target while technically compatible; fixes after Microsoft's end-of-support date are not promised
 
 ---
 
